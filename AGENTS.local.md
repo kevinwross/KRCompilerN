@@ -29,7 +29,20 @@ Run only your host's row. Front-end, backend, runtime, test and documentation ch
 
 **A gate subsumes the matrix.** If the gate is next — because you are about to push, or a milestone is closing — skip tier 2 and let the gate's clean builds cover it. Running the four configurations incrementally and then deleting them to run the same four again is eight builds for one answer.
 
-**The gate closes on this host's row, not on every host.** A Windows gate passing says nothing about native Linux or ARM64, and those are expected to need fixing when first built. Do not wait for them, and do not imply they passed — record in `implementation.md` exactly which configurations were built and which remain unverified.
+**The gate closes on this host's row, not on every host.** A Windows gate passing says nothing about native Linux or ARM64, and those are expected to need fixing when first built. Do not wait for them, and do not imply they passed.
+
+**Record the gate** in `implementation.md` under a `## Gate verification` heading, one block per gate, most recent first — a line per configuration and an explicit list of what remains unverified:
+
+```
+### <iso timestamp> — host gate (Windows)
+windows-msvc-debug    PASS <n>/<n>
+windows-msvc-release  PASS <n>/<n>
+linux-gcc-debug       PASS <n>/<n>
+linux-gcc-release     PASS <n>/<n>
+not verified: native Linux x64, Linux ARM64
+```
+
+A record saying "all configurations" or "six configurations" is not a record: name each one. Do not scatter the result into milestone evidence or a running log, and do not round the count.
 
 **Target sources rebuild with the compiler.** `krsrc/**` and `sysroot/**` are compiled by `krc`, not by the host compiler — this tree moved them out of `src/` at 746aa1b — so a green host build says nothing about them. After any change under `src/`, rebuild the target artifacts and compare: an artifact that changes when only compiler internals changed is a regression signal — investigate it before committing rather than accepting the new bytes.
 
