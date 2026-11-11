@@ -17,6 +17,7 @@ its row in `plan.md` Appendix A and adding an ADR here.
 | 0003 | IR core — typed SSA, memory model | proposed | D-005, D-006, §8 |
 | 0004 | IR textual dump and verifier | proposed | D-005, §8.9, §8.10 |
 | 0005 | KR16 relocation types | proposed | D-013, D-014, §11.4 |
+| 0006 | KR32/KR16 runtime ABI and host-service interface | proposed | D-010, D-011 |
 
 ## Process
 

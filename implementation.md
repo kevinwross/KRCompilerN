@@ -18,9 +18,9 @@ no `datetime`/`date` keys.
 | M5 C++ core | 8–10 weeks | Classes, single inheritance, virtual, references, overloading, ctors/dtors, `new`/`delete`, namespaces | G5 | complete |
 | M6 C++11/14/17 | 8–10 weeks | Templates, lambdas, move, `auto`/`decltype`, range-for, `constexpr`, `initializer_list`, `noexcept`/`alignas`, `thread_local` static, `if constexpr`, structured bindings, inline variables; fixtures | G6 | complete |
 | M7 KR16 backend + C | 6–8 weeks | KR16 descriptor, IP16 data model/ABI, codegen, image writer; Tier 0–1 C | G7 | complete |
-| M8 v1.0 hardening | 6–8 weeks | Full Tier 0–2, debugger parity, determinism, docs, tag `v1.0` | G8 | in progress |
-| M9 v1.1 runtime/libc/host services | 8–10 weeks | Port KR32 `libc.c`, stdio/`printf`, malloc, file I/O, host ABI, kernel profile; integrate KR16 `libc.s`/`fileio.c`; Tier 3 | G9 partial | in progress |
-| M10 v1.1 language/runtime completion | 8–10 weeks | EH/RTTI, variadic templates + fold expressions, dynamic TLS, utilities/memory, full KR32 `libc.c`/`kr32os`, KR16 runtime; tag `v1.1` | G9 | not started |
+| M8 v1.0 hardening | 6–8 weeks | Full Tier 0–2, debugger parity, determinism, docs, tag `v1.0` | G8 | complete |
+| M9 v1.1 runtime/libc/host services | 8–10 weeks | Port KR32 `libc.c`, stdio/`printf`, malloc, file I/O, host ABI, kernel profile; integrate KR16 `libc.s`/`fileio.c`; Tier 3 | G9 partial | complete |
+| M10 v1.1 language/runtime completion | 8–10 weeks | EH/RTTI, variadic templates + fold expressions, dynamic TLS, utilities/memory, full KR32 `libc.c`/`kr32os`, KR16 runtime; tag `v1.1` | G9 | complete |
 
 ## M0 Foundation — task checklist
 
@@ -408,8 +408,8 @@ Gate G2b: `krc -c` produces a KRO object; `krld` links KRO objects into an execu
 - [x] `src/tools/krld/main.cpp` — `krld` linker CLI: `--target`, `--script`, `--map`, `--size`, `--gc-sections`, `--strip`, `--debug-file`, `--whole-archive`, `--library-path`, `--library`, `--verbose`, `-o`, input files
 - [x] `src/tools/CMakeLists.txt` — `krld` executable linked against `krc_linker`
 - [x] `src/CMakeLists.txt` — added `add_subdirectory(linker)`
-- [ ] crt0 startup for KR32
-- [ ] Minimal libc (printf, malloc, file I/O)
+- [x] crt0 startup for KR32
+- [x] Minimal libc (printf, malloc, file I/O)
 - [x] `.rodata`, `.data`, `.bss` sections in assembler output
 - [x] Precise relocation offsets
 - [x] Global variable load/store via GOT-relative or absolute addressing
