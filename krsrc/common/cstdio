@@ -1,0 +1,29 @@
+#ifndef KRC_CSTDIO_H
+#define KRC_CSTDIO_H
+
+/* Minimal cstdio for krc C++ runtime compilation. */
+
+#include "stdio.h"
+
+namespace std {
+    using ::FILE;
+    using ::printf;
+    using ::fprintf;
+    using ::puts;
+    using ::putchar;
+    using ::snprintf;
+    using ::sprintf;
+    using ::vprintf;
+    using ::fopen;
+    using ::fclose;
+    using ::fread;
+    using ::fwrite;
+    using ::fgetc;
+    using ::fputc;
+    using ::fputs;
+    using ::stderr;
+    using ::stdin;
+    using ::stdout;
+}
+
+#endif /* KRC_CSTDIO_H */

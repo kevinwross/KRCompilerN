@@ -1,0 +1,14 @@
+#ifndef KRC_CTIME_H
+#define KRC_CTIME_H
+
+/* Minimal ctime for krc C++ runtime compilation. */
+
+#include "time.h"
+
+namespace std {
+    using ::time_t;
+    using ::time;
+    using ::clock;
+}
+
+#endif /* KRC_CTIME_H */

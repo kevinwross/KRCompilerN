@@ -1,0 +1,8 @@
+#ifndef KRC_CSTDBOOL_H
+#define KRC_CSTDBOOL_H
+
+/* Minimal cstdbool for krc C++ runtime compilation. */
+
+#include "stdbool.h"
+
+#endif /* KRC_CSTDBOOL_H */

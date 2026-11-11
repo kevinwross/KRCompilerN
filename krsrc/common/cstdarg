@@ -1,0 +1,15 @@
+#ifndef KRC_CSTDARG_H
+#define KRC_CSTDARG_H
+
+/* Minimal cstdarg for krc C++ runtime compilation. */
+
+#include "stdarg.h"
+
+namespace std {
+    using ::va_list;
+    using ::va_start;
+    using ::va_arg;
+    using ::va_end;
+}
+
+#endif /* KRC_CSTDARG_H */

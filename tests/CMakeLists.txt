@@ -11,9 +11,10 @@ add_executable(krc_tests
     test_krdap.cpp
     test_frame_layout.cpp
     test_debug_info.cpp
+    test_irgen.cpp
 )
 
-target_link_libraries(krc_tests PRIVATE krc_frontend krc_asm krc_backend krc_linker krc_debug doctest)
+target_link_libraries(krc_tests PRIVATE krc_frontend krc_asm krc_backend krc_linker krc_debug krc_ir doctest)
 
 target_include_directories(krc_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctest

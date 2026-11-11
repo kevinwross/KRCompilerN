@@ -1,0 +1,24 @@
+#ifndef KRC_CSTDLIB_H
+#define KRC_CSTDLIB_H
+
+/* Minimal cstdlib for krc C++ runtime compilation. */
+
+#include "stdlib.h"
+
+namespace std {
+    using ::exit;
+    using ::abort;
+    using ::atoi;
+    using ::atol;
+    using ::abs;
+    using ::labs;
+    using ::qsort;
+    using ::bsearch;
+    using ::malloc;
+    using ::free;
+    using ::calloc;
+    using ::realloc;
+    using ::NULL;
+}
+
+#endif /* KRC_CSTDLIB_H */

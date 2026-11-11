@@ -74,7 +74,7 @@ foreach(target ${KRSRC_TARGETS})
 
             add_custom_command(
                 OUTPUT "${obj_file}"
-                COMMAND $<TARGET_FILE:krc> -target ${target} -c -o "${obj_file}" "${CMAKE_CURRENT_SOURCE_DIR}/${src}"
+                COMMAND $<TARGET_FILE:krc> -target ${target} -c -I "${CMAKE_CURRENT_SOURCE_DIR}/common" -I "${CMAKE_CURRENT_SOURCE_DIR}/${target}" -o "${obj_file}" "${CMAKE_CURRENT_SOURCE_DIR}/${src}"
                 DEPENDS krc "${CMAKE_CURRENT_SOURCE_DIR}/${src}"
                 COMMENT "Compiling ${src} for ${target}"
                 VERBATIM)

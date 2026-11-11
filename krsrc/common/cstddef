@@ -1,0 +1,14 @@
+#ifndef KRC_CSTDDEF_H
+#define KRC_CSTDDEF_H
+
+/* Minimal cstddef for krc C++ runtime compilation. */
+
+#include "stddef.h"
+
+namespace std {
+    using ::size_t;
+    using ::ptrdiff_t;
+    using ::NULL;
+}
+
+#endif /* KRC_CSTDDEF_H */

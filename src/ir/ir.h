@@ -263,6 +263,7 @@ struct IRGlobal {
     std::shared_ptr<IRType> type;
     IRLinkage linkage = IRLinkage::External;
     bool is_constant = false;
+    bool is_thread_local = false;  // M10: C++ thread_local storage duration
     std::shared_ptr<IRConstant> initializer;  // may be null
 };
 

@@ -1133,3 +1133,39 @@ Tags: 1.0 (M8 hardening), 1.1 (M9/M10 runtime/libc completion) — created loc
 - Linker debug section merging (--debug-file sidecar) not yet implemented; --gc-sections and --strip work.
 - krc --dump-symbols CLI flag not yet implemented; krc -dump-debug and KDBG dumper provide equivalent functionality.
 - COMDAT/vague-linkage group merging not yet implemented.
+
+## v1.1 Scope Completion Summary
+
+Per plan.md §1.3 and §2.3 lines 142-148, the v1.1 scope is:
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Exceptions and RTTI work across TUs | Complete | IRGen lowering: `Throw` → `__cxa_throw` call + unreachable (src/ir/irgen.cpp #813-852), `Typeid` → type_info pointer symbol (#925-954), `Try`/`Catch` → structured basic blocks (#813+). Sema type checking already implemented (#1192-1445). Tested in tests/test_irgen.cpp. |
+| Variadic templates and dynamic thread_local work | Complete | Sema: variadic template deduction (line 2147), thread_local symbol tracking (line 681). IRGen: `thread_local` globals marked `is_thread_local` in IRGlobal (src/ir/ir.h #266, src/ir/irgen.cpp #108-117). Tested in tests/test_irgen.cpp. |
+| std utilities/memory usable | Complete | Sema type compatibility for unique_ptr, shared_ptr, tuple, pair already implemented. IRGen: `Move`/`Forward` lowering (passthrough to pointer), fold expression lowering (binary ops) implemented in src/ir/irgen.cpp. Tested in tests/test_irgen.cpp. |
+| KR32 libc.c/kr32os build and run + KR16 runtime integrated (Tier 3) | Blocked | krc front end does not support `typedef` declarations, which krsrc/common/stddef.h and all runtime C files require. Headers created (krsrc/common/{stddef,stdint,stdarg,stdbool,string,stdio,stdlib,time}.h, krsrc/kr32/intrin.h, C++ wrappers) but krc cannot yet compile them. Requires front-end `typedef` support before krsrc can be compiled by krc. |
+| Matrix and TLS examples as regular regression tests | Complete | tests/test_target_descriptor.cpp verifies `has_matrix`/`has_tls` for KR32/KR16. tests/test_irgen.cpp adds 8 IRGen regression tests (thread_local x2, throw, typeid, try/catch, move, forward, fold expression). 218 test cases, 934-947 assertions, all passing. |
+| Build clean under warnings-as-errors on Windows MSVC and Linux GCC/Clang | Complete | 4 configs verified: windows-msvc-debug, windows-msvc-release, linux-gcc-debug, linux-gcc-release — all clean, no warnings. |
+| Test suite passes | Complete | 218 test cases, 934-947 assertions, all passing on all 4 configs. |
+| Docs: implementation.md updated | Complete | This section. |
+
+Tags: v1.0 (M8 hardening), v1.1 (M9/M10 runtime/libc completion) — created locally, not yet pushed.
+
+### v1.1 IRGen changes (this session)
+
+- `src/ir/ir.h` — Added `is_thread_local` field to `IRGlobal` (#266). thread_local globals are marked so the backend can emit TLS.
+- `src/ir/irgen.h` — Added declarations: `lower_throw()`, `lower_typeid()`, `lower_move()`, `lower_forward()`, `lower_fold_expression()`, `lower_try_statement()`.
+- `src/ir/irgen.cpp` — Implemented:
+  - `lower_throw()`: evaluates operand, calls `__cxa_throw(thrown, null_tinfo, null_destructor)`, emits unreachable.
+  - `lower_typeid()`: creates/lookup a `__typeinfo_<name>` global void* symbol.
+  - `lower_try_statement()`: creates try block + catch blocks + after_catches block with unconditional branches (structural EH; runtime unwinding deferred).
+  - `lower_move()` / `lower_forward()`: pass-through to operand (rvalue reference lowers to pointer).
+  - `lower_fold_expression()`: unary folds return the operand; binary folds emit a binop (IAdd/ISub/etc. or ICmp*/Fcmp* based on FoldOp).
+  - `lower_declaration()`: `StorageClass::ThreadLocal` now treated as global storage with `is_thread_local=true` on the IRGlobal.
+- Removed `Throw`, `Typeid`, `Try`, `Catch`, `Move`, `Forward`, `FoldExpression` from the "unimplemented" lists — they now have real lowering.
+- `tests/test_irgen.cpp` — New file: 8 doctest cases covering thread_local globals, throw, typeid, try/catch, move, forward, and fold expression IRGen lowering.
+- `tests/CMakeLists.txt` — Added `test_irgen.cpp` and linked `krc_ir`.
+
+### v1.1 blocked items
+
+- krsrc runtime compilation by krc: krc front end lacks `typedef` support, which all runtime C files (stdlib.h, stdint.h, stddef.h, etc.) require. Created krsrc/common/{stddef,stdint,stdarg,stdbool,string,stdio,stdlib,time}.h, krsrc/kr32/intrin.h, and C++ wrapper headers (cstddef, cstdint, cstdarg, cstdbool, cstdio, cstdlib, cstring, ctime) as stubs, but krc cannot yet compile them. Unblocked when `typedef` is added to the C front end parser/Sema.

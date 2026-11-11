@@ -77,6 +77,7 @@ private:
     bool lower_expression_statement(const std::shared_ptr<Statement>& stmt);
     bool lower_declaration_statement(const std::shared_ptr<Statement>& stmt);
     bool lower_null_statement(const std::shared_ptr<Statement>& stmt);
+    bool lower_try_statement(const std::shared_ptr<Statement>& stmt);
 
     //------------------------------------------------------------------------------
     // Expression lowering
@@ -95,6 +96,11 @@ private:
     IRValue* lower_sizeof(const std::shared_ptr<Expression>& expr);
     IRValue* lower_member_access(const std::shared_ptr<Expression>& expr);
     IRValue* lower_array_subscript(const std::shared_ptr<Expression>& expr);
+    IRValue* lower_throw(const std::shared_ptr<Expression>& expr);
+    IRValue* lower_typeid(const std::shared_ptr<Expression>& expr);
+    IRValue* lower_move(const std::shared_ptr<Expression>& expr);
+    IRValue* lower_forward(const std::shared_ptr<Expression>& expr);
+    IRValue* lower_fold_expression(const std::shared_ptr<Expression>& expr);
 };
 
 } // namespace krc
