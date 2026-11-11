@@ -48,7 +48,8 @@ It is a work in progress; the authoritative specification is in `plan.md`
     and 2 new M10 thread_local tests (storage duration, dynamic initializer),
     and 2 new M10 forward tests (preserves referenced type, deduces from operand),
     and 2 new M10 pair type tests (type compatibility, first/second access),
-    and 2 new M10 tuple type tests (type compatibility, element access).
+    and 2 new M10 tuple type tests (type compatibility, element access),
+    and 3 new M10 smart pointer tests (unique_ptr compatibility, shared_ptr compatibility, pointee access).
   - `tests/third_party/doctest/doctest.h` — vendored doctest (the only
     vendored test dependency).
 - **Frozen:** Not yet frozen.

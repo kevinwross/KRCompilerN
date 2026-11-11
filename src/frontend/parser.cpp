@@ -663,6 +663,38 @@ std::shared_ptr<Type> Parser::parse_type_specifier() {
                     ttype->tuple_element_types = std::move(elements);
                     return ttype;
                 }
+                // M10: unique_ptr<T> — std::unique_ptr type syntax.
+                if (type_name == "unique_ptr" && peek().kind == TokenKind::Less) {
+                    advance();  // consume 'unique_ptr'
+                    expect(TokenKind::Less);
+                    auto pointee = parse_type_specifier();
+                    if (!pointee) {
+                        error("expected type argument in unique_ptr<T>");
+                        return nullptr;
+                    }
+                    expect(TokenKind::Greater);
+                    auto utype = std::make_shared<Type>();
+                    utype->kind = TypeKind::UniquePtr;
+                    utype->name = "unique_ptr";
+                    utype->smart_ptr_type = pointee;
+                    return utype;
+                }
+                // M10: shared_ptr<T> — std::shared_ptr type syntax.
+                if (type_name == "shared_ptr" && peek().kind == TokenKind::Less) {
+                    advance();  // consume 'shared_ptr'
+                    expect(TokenKind::Less);
+                    auto pointee = parse_type_specifier();
+                    if (!pointee) {
+                        error("expected type argument in shared_ptr<T>");
+                        return nullptr;
+                    }
+                    expect(TokenKind::Greater);
+                    auto stype = std::make_shared<Type>();
+                    stype->kind = TypeKind::SharedPtr;
+                    stype->name = "shared_ptr";
+                    stype->smart_ptr_type = pointee;
+                    return stype;
+                }
                 // Typedef name — unknown without symbol table.  Treat as
                 // void and report.
                 error("unknown type name: " + type_name);

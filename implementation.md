@@ -851,7 +851,13 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   allocatable register list. Addresses the M8 Tier 0–2 test coverage
   requirement (plan.md §15.5).
 - All 4 working build configs clean; ctest green on both GCC configs.
-- 207 test cases, 912 assertions, all passing.
+- 210 test cases, 920 assertions, all passing.
+- src/frontend/ast.h — Added `TypeKind::UniquePtr` and `TypeKind::SharedPtr` with `smart_ptr_type` field for M10 smart pointer types.
+- src/frontend/ast.cpp — Added `UniquePtr` and `SharedPtr` to `dump_type()`.
+- src/frontend/parser.cpp — Parses `unique_ptr<T>` and `shared_ptr<T>` as smart pointer types in `parse_type_specifier()`.
+- src/frontend/sema.cpp — Added `UniquePtr` and `SharedPtr` cases to `types_compatible()`.
+- src/ir/irgen.cpp — Added `UniquePtr` and `SharedPtr` to opaque type list in `lower_type()`.
+- tests/test_sema.cpp — Added 3 M10 smart pointer tests: unique_ptr compatibility, shared_ptr compatibility, pointee type access.
 - src/frontend/ast.h — Added `TypeKind::Tuple` with `tuple_element_types` field for M10 `std::tuple`.
 - src/frontend/ast.cpp — Added `Tuple` to `dump_type()`.
 - src/frontend/parser.cpp — Parses `tuple<T1, T2, ...>` as `TypeKind::Tuple` in `parse_type_specifier()`.
@@ -986,7 +992,13 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   allocatable register list. Addresses the M8 Tier 0–2 test coverage
   requirement (plan.md §15.5).
 - All 4 working build configs clean; ctest green on both GCC configs.
-- 207 test cases, 912 assertions, all passing.
+- 210 test cases, 920 assertions, all passing.
+- src/frontend/ast.h — Added `TypeKind::UniquePtr` and `TypeKind::SharedPtr` with `smart_ptr_type` field for M10 smart pointer types.
+- src/frontend/ast.cpp — Added `UniquePtr` and `SharedPtr` to `dump_type()`.
+- src/frontend/parser.cpp — Parses `unique_ptr<T>` and `shared_ptr<T>` as smart pointer types in `parse_type_specifier()`.
+- src/frontend/sema.cpp — Added `UniquePtr` and `SharedPtr` cases to `types_compatible()`.
+- src/ir/irgen.cpp — Added `UniquePtr` and `SharedPtr` to opaque type list in `lower_type()`.
+- tests/test_sema.cpp — Added 3 M10 smart pointer tests: unique_ptr compatibility, shared_ptr compatibility, pointee type access.
 - src/frontend/ast.h — Added `TypeKind::Tuple` with `tuple_element_types` field for M10 `std::tuple`.
 - src/frontend/ast.cpp — Added `Tuple` to `dump_type()`.
 - src/frontend/parser.cpp — Parses `tuple<T1, T2, ...>` as `TypeKind::Tuple` in `parse_type_specifier()`.

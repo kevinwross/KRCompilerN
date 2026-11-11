@@ -43,6 +43,8 @@ enum class TypeKind : std::uint8_t {
     InitializerList, // M6: std::initializer_list<T>
     Pair,           // M10: std::pair<T, U>
     Tuple,          // M10: std::tuple<Ts...>
+    UniquePtr,      // M10: std::unique_ptr<T>
+    SharedPtr,      // M10: std::shared_ptr<T>
 };
 
 struct Type : AstNode {
@@ -69,6 +71,8 @@ struct Type : AstNode {
     std::shared_ptr<Type> pair_second_type;
     // M10: for TypeKind::Tuple, the element types (T1, T2, ...).
     std::vector<std::shared_ptr<Type>> tuple_element_types;
+    // M10: for TypeKind::UniquePtr/SharedPtr, the pointee type T.
+    std::shared_ptr<Type> smart_ptr_type;
     std::shared_ptr<Type> underlying;
     // M6: vtable layout for classes with virtual functions.
     bool has_vtable = false;          // true if this struct has virtual functions

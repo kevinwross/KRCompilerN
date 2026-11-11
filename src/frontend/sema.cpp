@@ -296,6 +296,9 @@ bool Sema::types_compatible(const std::shared_ptr<Type>& a,
                 if (!types_compatible(a->tuple_element_types[i], b->tuple_element_types[i])) return false;
             }
             return true;
+        case TypeKind::UniquePtr:
+        case TypeKind::SharedPtr:
+            return types_compatible(a->smart_ptr_type, b->smart_ptr_type);
     }
     return false;
 }

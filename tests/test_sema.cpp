@@ -3323,3 +3323,74 @@ TEST_CASE("Sema type: tuple element types are accessible") {
     CHECK(t->tuple_element_types[2]->kind == TypeKind::Bool);
 }
 
+TEST_CASE("Sema type: unique_ptr<T> type compatibility") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    // Build unique_ptr<int>.
+    auto uptr_i = std::make_shared<Type>();
+    uptr_i->kind = TypeKind::UniquePtr;
+    uptr_i->smart_ptr_type = sema.int_type();
+
+    // Build another unique_ptr<int> (different pointer, same structure).
+    auto uptr_i2 = std::make_shared<Type>();
+    uptr_i2->kind = TypeKind::UniquePtr;
+    uptr_i2->smart_ptr_type = sema.int_type();
+
+    // Build unique_ptr<char> (different pointee).
+    auto uptr_c = std::make_shared<Type>();
+    uptr_c->kind = TypeKind::UniquePtr;
+    uptr_c->smart_ptr_type = sema.char_type();
+
+    // Same-structure unique_ptrs are compatible.
+    CHECK(sema.types_compatible(uptr_i, uptr_i2));
+
+    // Different-structure unique_ptrs are not compatible.
+    CHECK(!sema.types_compatible(uptr_i, uptr_c));
+}
+
+TEST_CASE("Sema type: shared_ptr<T> type compatibility") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    // Build shared_ptr<int>.
+    auto sptr_i = std::make_shared<Type>();
+    sptr_i->kind = TypeKind::SharedPtr;
+    sptr_i->smart_ptr_type = sema.int_type();
+
+    // Build another shared_ptr<int> (different pointer, same structure).
+    auto sptr_i2 = std::make_shared<Type>();
+    sptr_i2->kind = TypeKind::SharedPtr;
+    sptr_i2->smart_ptr_type = sema.int_type();
+
+    // Build shared_ptr<char> (different pointee).
+    auto sptr_c = std::make_shared<Type>();
+    sptr_c->kind = TypeKind::SharedPtr;
+    sptr_c->smart_ptr_type = sema.char_type();
+
+    // Same-structure shared_ptrs are compatible.
+    CHECK(sema.types_compatible(sptr_i, sptr_i2));
+
+    // Different-structure shared_ptrs are not compatible.
+    CHECK(!sema.types_compatible(sptr_i, sptr_c));
+}
+
+TEST_CASE("Sema type: smart pointer pointee type is accessible") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    auto u = std::make_shared<Type>();
+    u->kind = TypeKind::UniquePtr;
+    u->smart_ptr_type = sema.bool_type();
+
+    REQUIRE(u->smart_ptr_type != nullptr);
+    CHECK(u->smart_ptr_type->kind == TypeKind::Bool);
+
+    auto s = std::make_shared<Type>();
+    s->kind = TypeKind::SharedPtr;
+    s->smart_ptr_type = sema.int_type();
+
+    REQUIRE(s->smart_ptr_type != nullptr);
+    CHECK(s->smart_ptr_type->kind == TypeKind::Int);
+}
+
