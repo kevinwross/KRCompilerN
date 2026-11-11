@@ -636,6 +636,33 @@ std::shared_ptr<Type> Parser::parse_type_specifier() {
                     ptype->pair_second_type = second_type;
                     return ptype;
                 }
+                // M10: tuple<T1, T2, ...> — std::tuple type syntax.
+                if (type_name == "tuple" && peek().kind == TokenKind::Less) {
+                    advance();  // consume 'tuple'
+                    expect(TokenKind::Less);
+                    std::vector<std::shared_ptr<Type>> elements;
+                    // At least one element required.
+                    auto first_type = parse_type_specifier();
+                    if (!first_type) {
+                        error("expected first type argument in tuple<Ts...>");
+                        return nullptr;
+                    }
+                    elements.push_back(first_type);
+                    while (consume(TokenKind::Comma)) {
+                        auto next_type = parse_type_specifier();
+                        if (!next_type) {
+                            error("expected type argument after ',' in tuple<Ts...>");
+                            return nullptr;
+                        }
+                        elements.push_back(next_type);
+                    }
+                    expect(TokenKind::Greater);
+                    auto ttype = std::make_shared<Type>();
+                    ttype->kind = TypeKind::Tuple;
+                    ttype->name = "tuple";
+                    ttype->tuple_element_types = std::move(elements);
+                    return ttype;
+                }
                 // Typedef name — unknown without symbol table.  Treat as
                 // void and report.
                 error("unknown type name: " + type_name);

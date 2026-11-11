@@ -3283,3 +3283,43 @@ TEST_CASE("Sema type: pair first and second types are accessible") {
     CHECK(p->pair_second_type->kind == TypeKind::Char);
 }
 
+TEST_CASE("Sema type: tuple<Ts...> type compatibility") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    // Build tuple<int, char>.
+    auto tuple_ic = std::make_shared<Type>();
+    tuple_ic->kind = TypeKind::Tuple;
+    tuple_ic->tuple_element_types = {sema.int_type(), sema.char_type()};
+
+    // Build another tuple<int, char> (different pointer, same structure).
+    auto tuple_ic2 = std::make_shared<Type>();
+    tuple_ic2->kind = TypeKind::Tuple;
+    tuple_ic2->tuple_element_types = {sema.int_type(), sema.char_type()};
+
+    // Build tuple<int, int> (different second).
+    auto tuple_ii = std::make_shared<Type>();
+    tuple_ii->kind = TypeKind::Tuple;
+    tuple_ii->tuple_element_types = {sema.int_type(), sema.int_type()};
+
+    // Same-structure tuples are compatible.
+    CHECK(sema.types_compatible(tuple_ic, tuple_ic2));
+
+    // Different-structure tuples are not compatible.
+    CHECK(!sema.types_compatible(tuple_ic, tuple_ii));
+}
+
+TEST_CASE("Sema type: tuple element types are accessible") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    auto t = std::make_shared<Type>();
+    t->kind = TypeKind::Tuple;
+    t->tuple_element_types = {sema.int_type(), sema.char_type(), sema.bool_type()};
+
+    REQUIRE(t->tuple_element_types.size() == 3);
+    CHECK(t->tuple_element_types[0]->kind == TypeKind::Int);
+    CHECK(t->tuple_element_types[1]->kind == TypeKind::Char);
+    CHECK(t->tuple_element_types[2]->kind == TypeKind::Bool);
+}
+

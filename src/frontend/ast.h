@@ -42,6 +42,7 @@ enum class TypeKind : std::uint8_t {
     Decltype,       // M6: `decltype(expr)` placeholder type
     InitializerList, // M6: std::initializer_list<T>
     Pair,           // M10: std::pair<T, U>
+    Tuple,          // M10: std::tuple<Ts...>
 };
 
 struct Type : AstNode {
@@ -66,6 +67,8 @@ struct Type : AstNode {
     // M10: for TypeKind::Pair, the two element types (first, second).
     std::shared_ptr<Type> pair_first_type;
     std::shared_ptr<Type> pair_second_type;
+    // M10: for TypeKind::Tuple, the element types (T1, T2, ...).
+    std::vector<std::shared_ptr<Type>> tuple_element_types;
     std::shared_ptr<Type> underlying;
     // M6: vtable layout for classes with virtual functions.
     bool has_vtable = false;          // true if this struct has virtual functions

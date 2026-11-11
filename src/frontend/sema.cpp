@@ -290,6 +290,12 @@ bool Sema::types_compatible(const std::shared_ptr<Type>& a,
         case TypeKind::Pair:
             return types_compatible(a->pair_first_type, b->pair_first_type) &&
                    types_compatible(a->pair_second_type, b->pair_second_type);
+        case TypeKind::Tuple:
+            if (a->tuple_element_types.size() != b->tuple_element_types.size()) return false;
+            for (std::size_t i = 0; i < a->tuple_element_types.size(); ++i) {
+                if (!types_compatible(a->tuple_element_types[i], b->tuple_element_types[i])) return false;
+            }
+            return true;
     }
     return false;
 }

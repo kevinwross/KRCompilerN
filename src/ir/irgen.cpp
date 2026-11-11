@@ -74,6 +74,7 @@ std::shared_ptr<IRType> IRGen::lower_type(const std::shared_ptr<Type>& ast_type)
         case TypeKind::Auto:
         case TypeKind::Decltype:
         case TypeKind::Pair:
+        case TypeKind::Tuple:
         case TypeKind::Union: {
             auto t = std::make_shared<IRType>();
             t->kind = IRTypeKind::Opaque;
