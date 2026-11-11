@@ -112,7 +112,7 @@ int vprintf(const char* fmt, va_list args) {
                              width, pad);
                     break;
                 case 'p':
-                    put_uint((unsigned long)va_arg(args, void*), 16, false,
+                    put_uint((unsigned long)(uintptr_t)va_arg(args, void*), 16, false,
                              true, width, pad);
                     break;
                 case 'c': {

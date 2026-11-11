@@ -98,7 +98,8 @@ int fputc(int c, void* stream) {
 }
 
 int fputs(const char* s, void* stream) {
-    return fwrite(s, 1, strlen(s), stream);
+    (void)stream;
+    return (int)fwrite(s, 1, strlen(s), stream);
 }
 
 int fgetc(void* stream) {

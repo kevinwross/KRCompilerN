@@ -60,13 +60,17 @@ long strtol(const char* nptr, char** endptr, int base) {
     return value;
 }
 
+#ifndef _MSC_VER
 int abs(int j) {
     return j < 0 ? -j : j;
 }
+#endif
 
+#ifndef _MSC_VER
 long labs(long j) {
     return j < 0 ? -j : j;
 }
+#endif
 
 static int default_compare(const void* a, const void* b) {
     const unsigned char* pa = (const unsigned char*)a;

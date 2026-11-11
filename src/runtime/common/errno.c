@@ -7,6 +7,10 @@
 #include <stddef.h>
 #include <stdlib.h>
 
+#ifdef errno
+#undef errno
+#endif
+
 int errno = 0;
 
 /* __krc_assert_fail — called by assert() when the condition is false.

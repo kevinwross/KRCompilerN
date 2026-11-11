@@ -20,6 +20,8 @@ namespace {
 // Send a DAP message to krdap and read the response body.
 std::string dap_roundtrip(const std::string& request_json,
                           const std::string& krdap_path) {
+    (void)request_json;
+    (void)krdap_path;
 #ifdef _WIN32
     // Windows: subprocess not supported in this test.
     return "";

@@ -18,6 +18,10 @@ void exit(int code);
 extern void *__kr32_heap_start(void);
 extern void *__kr32_heap_end(void);
 
+#ifdef errno
+#undef errno
+#endif
+
 int errno = 0;
 
 #define EPERM 1
@@ -131,6 +135,25 @@ uintptr_t heap_allocated_blocks = 0;
 uintptr_t heap_free_blocks = 0;
 static int heap_lock_state = 0;
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#pragma intrinsic(_InterlockedCompareExchange)
+#pragma intrinsic(_InterlockedExchange)
+
+static void heap_lock_acquire(void) {
+    volatile long *state = (volatile long *)&heap_lock_state;
+    long expected = 0;
+    while (_InterlockedCompareExchange(state, 1, 0) != 0) {
+        expected = 0;
+        /* spin */
+    }
+}
+
+static void heap_lock_release(void) {
+    volatile long *state = (volatile long *)&heap_lock_state;
+    _InterlockedExchange(state, 0);
+}
+#else
 static void heap_lock_acquire(void) {
     int expected = 0;
     while (!__atomic_compare_exchange_n(&heap_lock_state, &expected, 1, 0, 0, 0)) {
@@ -141,6 +164,7 @@ static void heap_lock_acquire(void) {
 static void heap_lock_release(void) {
     __atomic_store_n(&heap_lock_state, 0, 0);
 }
+#endif
 
 unsigned long long __kr32_ulldiv(unsigned long long left,
                                   unsigned long long right) {

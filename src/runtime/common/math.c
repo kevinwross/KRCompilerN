@@ -7,12 +7,15 @@
 
 #include "hal.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 
 /* Integer absolute value (long long variant). */
+#ifndef _MSC_VER
 long long llabs(long long j) {
     return j < 0 ? -j : j;
 }
+#endif
 
 /* Integer square root (floor). Returns the largest r such that r*r <= n.
  * Returns 0 for negative input. */

@@ -8,6 +8,10 @@
 #include <cstdlib>
 #include <cstdio>
 
+#ifdef _MSC_VER
+#pragma warning(disable: 4702)  // unreachable code after abort()
+#endif
+
 extern "C" {
 
 /* __cxa_allocate_exception — allocate exception object storage. */
