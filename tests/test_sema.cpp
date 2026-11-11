@@ -2925,3 +2925,117 @@ TEST_CASE("Sema vtable: derived class inherits base virtual functions") {
     REQUIRE(derived_type->virtual_functions.size() == 2);
 }
 
+TEST_CASE("Sema template: variadic template parameter deduction") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    // Build: template <typename... Args> void func(Args... args);
+    // Template parameter: typename... Args (variadic)
+    auto args_param = std::make_shared<TemplateParam>();
+    args_param->kind = TemplateParam::Kind::Type;
+    args_param->is_variadic = true;
+    args_param->name = "Args";
+
+    // Function type: void func(Args... args) — single param of type Args
+    auto func_type = std::make_shared<Type>();
+    func_type->kind = TypeKind::Function;
+    func_type->name = "func";
+    func_type->return_type = sema.void_type();
+
+    auto arg_type = std::make_shared<Type>();
+    arg_type->kind = TypeKind::TemplateParam;
+    arg_type->template_param_name = "Args";
+    func_type->param_types.push_back(arg_type);
+
+    auto decl = std::make_shared<Declaration>();
+    decl->type = func_type;
+    auto dec = std::make_shared<Declarator>();
+    dec->name = "func";
+    dec->is_function = true;
+    dec->is_variadic = true;
+    dec->param_types.push_back(arg_type);
+    decl->declarators.push_back(dec);
+    decl->template_params.push_back(args_param);
+
+    auto tmpl = std::make_shared<TemplateDeclaration>();
+    tmpl->params = {args_param};
+    tmpl->declaration = decl;
+
+    sema.register_template("func", tmpl);
+
+    // Build call args: func(1, 2, 3) — three int args
+    std::vector<std::shared_ptr<Expression>> call_args;
+    for (int i = 0; i < 3; ++i) {
+        auto arg = std::make_shared<Expression>();
+        arg->kind = ExpressionKind::IntegerLiteral;
+        arg->int_literal_value = i;
+        arg->type = sema.int_type();
+        call_args.push_back(arg);
+    }
+
+    // Deduce template arguments directly.
+    std::vector<std::shared_ptr<Type>> deduced_args;
+    CHECK(sema.deduce_template_args(
+        tmpl->params, call_args, func_type->param_types, deduced_args));
+    REQUIRE(deduced_args.size() == 1);
+    REQUIRE(deduced_args[0] != nullptr);
+    CHECK(deduced_args[0] == sema.int_type());
+}
+
+TEST_CASE("Sema expression: fold expression type checking") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    // Build: (args + ...) where args is an int variable.
+    // First declare "args" as an int variable so lookup succeeds.
+    auto args_decl = std::make_shared<Declaration>();
+    args_decl->type = sema.int_type();
+    auto args_dec = std::make_shared<Declarator>();
+    args_dec->name = "args";
+    args_decl->declarators.push_back(args_dec);
+    CHECK(sema.resolve_declarator_type(*args_decl));
+    CHECK(sema.walk_declaration(*args_decl));
+
+    auto arg_var = std::make_shared<Expression>();
+    arg_var->kind = ExpressionKind::Identifier;
+    arg_var->identifier_name = "args";
+    arg_var->type = sema.int_type();
+    arg_var->is_constant = false;
+
+    auto fold = std::make_shared<Expression>();
+    fold->kind = ExpressionKind::FoldExpression;
+    fold->fold_kind = 1; // unary right fold: (pack op ...)
+    fold->fold_op = FoldOp::Plus;
+    fold->fold_operand = arg_var;
+
+    // Type-check the fold expression.
+    CHECK(sema.type_fold_expression(*fold));
+    REQUIRE(fold->type != nullptr);
+    CHECK(fold->type == sema.int_type());
+    CHECK(fold->is_lvalue == false);
+    CHECK(fold->is_constant == false);
+}
+
+TEST_CASE("Sema expression: fold expression with constant operand") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    // Build: (1 + 2 + ...) — constant fold.
+    auto lit = std::make_shared<Expression>();
+    lit->kind = ExpressionKind::IntegerLiteral;
+    lit->int_literal_value = 42;
+    lit->type = sema.int_type();
+    lit->is_constant = true;
+
+    auto fold = std::make_shared<Expression>();
+    fold->kind = ExpressionKind::FoldExpression;
+    fold->fold_kind = 1; // unary right fold
+    fold->fold_op = FoldOp::Plus;
+    fold->fold_operand = lit;
+
+    CHECK(sema.type_fold_expression(*fold));
+    REQUIRE(fold->type != nullptr);
+    CHECK(fold->type == sema.int_type());
+    CHECK(fold->is_constant == true);
+}
+

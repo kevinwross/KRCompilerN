@@ -851,7 +851,17 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   allocatable register list. Addresses the M8 Tier 0–2 test coverage
   requirement (plan.md §15.5).
 - All 4 working build configs clean; ctest green on both GCC configs.
-- 193 test cases, 854 assertions, all passing.
+- 196 test cases, 869 assertions, all passing.
+- src/frontend/sema.cpp — Added `type_fold_expression()` for M10 C++17 fold
+  expression type checking; dispatched from `type_expression()`.
+- src/frontend/sema.h — Declared `type_fold_expression()`.
+- src/frontend/sema.cpp — `deduce_template_args()` now handles variadic
+  template parameter packs: when a parameter has `is_variadic = true`, all
+  remaining call arguments are consumed and must be mutually compatible types.
+- tests/test_sema.cpp — Added 3 M10 tests: "variadic template parameter
+  deduction" (deduce_template_args with 3 int args for typename... Args),
+  "fold expression type checking" (unary right fold (args + ...)), and
+  "fold expression with constant operand".
 - src/frontend/ast.h — Added `FoldExpression` to `ExpressionKind`, `FoldOp`
   enum, and fold expression fields (`fold_kind`, `fold_op`, `fold_operand`,
   `fold_init`) to `Expression` for M10 fold expression support.
@@ -925,7 +935,17 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   allocatable register list. Addresses the M8 Tier 0–2 test coverage
   requirement (plan.md §15.5).
 - All 4 working build configs clean; ctest green on both GCC configs.
-- 193 test cases, 854 assertions, all passing.
+- 196 test cases, 869 assertions, all passing.
+- src/frontend/sema.cpp — Added `type_fold_expression()` for M10 C++17 fold
+  expression type checking; dispatched from `type_expression()`.
+- src/frontend/sema.h — Declared `type_fold_expression()`.
+- src/frontend/sema.cpp — `deduce_template_args()` now handles variadic
+  template parameter packs: when a parameter has `is_variadic = true`, all
+  remaining call arguments are consumed and must be mutually compatible types.
+- tests/test_sema.cpp — Added 3 M10 tests: "variadic template parameter
+  deduction" (deduce_template_args with 3 int args for typename... Args),
+  "fold expression type checking" (unary right fold (args + ...)), and
+  "fold expression with constant operand".
 - src/frontend/ast.h — Added `FoldExpression` to `ExpressionKind`, `FoldOp`
   enum, and fold expression fields (`fold_kind`, `fold_op`, `fold_operand`,
   `fold_init`) to `Expression` for M10 fold expression support.

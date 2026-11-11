@@ -1155,6 +1155,8 @@ bool Sema::type_expression(Expression& expr) {
             return type_lambda(expr);
         case ExpressionKind::Move:
             return type_move(expr);
+        case ExpressionKind::FoldExpression:
+            return type_fold_expression(expr);
         default:
             // Unknown expression kind — untyped.
             return true;
@@ -1310,6 +1312,34 @@ bool Sema::type_string_literal(Expression& expr) {
     expr.type = array_of(builtin_char_, expr.string_value.size() + 1);
     expr.is_constant = true;
     expr.is_lvalue = true; // string literals are lvalues in C11
+    return true;
+}
+
+bool Sema::type_fold_expression(Expression& expr) {
+    // M10: type-check a C++17 fold expression.
+    // The fold operand (the pack) must be typed first.
+    if (!expr.fold_operand) {
+        return fail(DiagnosticID{4016, "sema-error-fold"},
+                    "fold expression: missing pack operand", expr.location);
+    }
+    if (!type_expression(*expr.fold_operand)) return false;
+
+    // For binary folds, also type the init expression.
+    if (expr.fold_kind == 2 || expr.fold_kind == 3) {
+        if (!expr.fold_init) {
+            return fail(DiagnosticID{4016, "sema-error-fold"},
+                "fold expression: missing init for binary fold",
+                expr.location);
+        }
+        if (!type_expression(*expr.fold_init)) return false;
+    }
+
+    // Result type: the type of the fold operand (simplified; a full
+    // implementation would compute the result of applying fold_op to the
+    // pack element type).
+    expr.type = expr.fold_operand->type;
+    expr.is_lvalue = false; // fold expressions are prvalues
+    expr.is_constant = expr.fold_operand->is_constant;
     return true;
 }
 
@@ -1990,10 +2020,11 @@ bool Sema::deduce_template_args(
     // Map template parameter name → deduced type.
     std::unordered_map<std::string, std::shared_ptr<Type>> deduced;
 
-    for (std::size_t i = 0; i < param_types.size() && i < call_args.size();
+    std::size_t call_arg_idx = 0;
+    for (std::size_t i = 0; i < param_types.size() && call_arg_idx < call_args.size();
          ++i) {
         auto param_type = param_types[i];
-        auto arg_type = call_args[i]->type;
+        auto arg_type = call_args[call_arg_idx]->type;
         if (!arg_type) {
             // Argument not yet typed; can't deduce.
             return false;
@@ -2003,19 +2034,38 @@ bool Sema::deduce_template_args(
             // Parameter type is a template parameter: deduce it from the
             // argument type.
             auto param_name = param_type->template_param_name;
-            auto it = deduced.find(param_name);
-            if (it == deduced.end()) {
-                // First occurrence: deduce the type.
-                deduced[param_name] = arg_type;
-            } else if (!types_compatible(it->second, arg_type)) {
-                // Conflicting deductions for the same parameter.
-                return false;
+
+            // M10: variadic template parameter pack — consume all remaining
+            // call arguments for this parameter.
+            if (i < params.size() && params[i]->is_variadic) {
+                // Collect all remaining call args for the variadic parameter.
+                // They must all be mutually compatible.
+                auto first_type = arg_type;
+                for (std::size_t j = call_arg_idx + 1; j < call_args.size(); ++j) {
+                    if (!call_args[j]->type) return false;
+                    if (!types_compatible(first_type, call_args[j]->type)) {
+                        return false; // conflicting types in variadic pack
+                    }
+                }
+                deduced[param_name] = first_type;
+                call_arg_idx = call_args.size(); // consume all remaining args
+            } else {
+                auto it = deduced.find(param_name);
+                if (it == deduced.end()) {
+                    // First occurrence: deduce the type.
+                    deduced[param_name] = arg_type;
+                } else if (!types_compatible(it->second, arg_type)) {
+                    // Conflicting deductions for the same parameter.
+                    return false;
+                }
+                ++call_arg_idx;
             }
         } else {
             // Non-template-parameter type: check compatibility.
             if (!types_compatible(param_type, arg_type)) {
                 return false;
             }
+            ++call_arg_idx;
         }
     }
 
