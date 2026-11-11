@@ -14,7 +14,7 @@ Three tiers. Run the smallest one the change needs; never run a larger one "to b
 
 Use the preset form: `cmake --build --preset <preset>`, then `ctest --preset <preset>`. A hand-rolled `cmake -S . -B <dir>` works only because that directory already holds the preset's cache; on a fresh one it silently produces an untyped build with whatever compiler is first on `PATH`.
 
-**2. Boundary change — the matrix for this host.** Run the matrix when the change crosses a boundary that can break another configuration: `include/krc/`, `src/ir/`, the target descriptor, the object or symbol format, the ABI, `CMakeLists.txt`, or `CMakePresets.json` — the same categories that require an ADR. Build and test every configuration this host can reach:
+**2. Boundary change — the matrix for this host.** Run the matrix when the change crosses a boundary that can break another configuration: `include/krc/`, `src/ir/`, the target descriptor, the object or symbol format, the ABI, `CMakeLists.txt`, or `CMakePresets.json` — the same categories that require an ADR. Run it **before committing** the change, and before starting further work in that area; a boundary change committed without the matrix is outside the policy. Build and test every configuration this host can reach:
 
 | Host | Configurations |
 |---|---|
