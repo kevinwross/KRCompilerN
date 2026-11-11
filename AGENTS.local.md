@@ -10,7 +10,9 @@ Add entries here rather than editing the managed blocks in `AGENTS.md`; an edit 
 
 Three tiers. Run the smallest one the change needs; never run a larger one "to be safe".
 
-**1. Inner loop — per edit and per local commit.** One build: the host's debug preset. `windows-msvc-debug` on Windows; `linux-gcc-debug` in WSL or on Linux. `cmake --build --preset …`, then `ctest --preset …`. CMake rebuilds only what changed. While iterating, do not configure or build a release preset, a second compiler, or another host. **A local commit is not a milestone and does not earn a matrix.**
+**1. Inner loop — per edit and per local commit.** One build: the preset for **the operating system you are working in**, not the other one. On a Windows host that is `windows-msvc-debug`; in WSL or on Linux, `linux-gcc-debug`. **The WSL presets are the Linux row, not the Windows inner loop** — building them while working on Windows means MSVC compiles nothing until the gate, and a `/W4 /WX` failure surfaces commits later, on a change that may not be the cause. While iterating, do not configure or build a release preset, a second compiler, or another host. **A local commit is not a milestone and does not earn a matrix.**
+
+Use the preset form: `cmake --build --preset <preset>`, then `ctest --preset <preset>`. A hand-rolled `cmake -S . -B <dir>` works only because that directory already holds the preset's cache; on a fresh one it silently produces an untyped build with whatever compiler is first on `PATH`.
 
 **2. Boundary change — the matrix for this host.** Run the matrix when the change crosses a boundary that can break another configuration: `include/krc/`, `src/ir/`, the target descriptor, the object or symbol format, the ABI, `CMakeLists.txt`, or `CMakePresets.json` — the same categories that require an ADR. Build and test every configuration this host can reach:
 
