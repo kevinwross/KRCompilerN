@@ -61,6 +61,14 @@ Run only your host's row. A change confined to `docs/`, `tests/` or `implementat
 |---|---|---|---|
 | Windows | x64 | <windows-latest in CI, or name the dev machines> | MSVC 19.51 Debug/Release verified locally 2026-11-09; 19/19 CTest; remote CI pending. |
 | Linux | x64 | <ubuntu-latest in CI> | WSL Alpine 3.22 GCC 14.2 Debug/Release and Clang 20.1 Debug/ASan verified locally 2026-11-09; 19/19 CTest; remote CI pending. |
+
+Target-specific notes:
+
+- **Windows:**
+  - Long paths beyond 260 characters fail unless long-path support is enabled.
+  - Use the language path API even though Windows accepts `/`; the tool that rejects a slash is usually native, not the runtime.
+- **Linux:**
+  - Filename case is significant here. An import that mismatches on-disk case resolves on Windows and fails here.
 <!-- project:targets:end -->
 
 **Host, not VM.** This table is where the toolchain is *built and tested*. The compiler's output targets are KR32 and KR16 — they are not host platforms and do not belong here. ARM64 host CI is deliberately deferred (§15.4); the compiler must nevertheless stay portable C++20, so do not introduce host-specific code without an ADR.
@@ -73,12 +81,13 @@ Dependencies flow one way: **front end → IR → backend → assembler → link
 - `src/ir/` — typed SSA and IR validation. Must not depend on a specific target; target-specific choices belong in `src/backend/` and the target descriptor.
 - `src/backend/` — instruction selection, register allocation, frames, asm printing, per-target descriptors. Depends on IR, never the reverse.
 - `src/asm/`, `src/linker/`, `src/debug/` — object format, `krld`, symbol/debug format. The linker must not reach back into the front end.
-- `krsrc/` — runtime and libc support for the VMs. Must not depend on compiler internals.
+- `krsrc/` — runtime and libc support for the VMs, compiled by `krc` for the VM targets. **Never built by the host compiler, and never added to the host CMake build**: a source here that the host build tries to compile is a wiring error, not a missing dependency. Must not depend on compiler internals.
 - `include/krc/` — the public surface. Keep it minimal; internal headers stay under `src/`.
 - One compiler driver: `krc` orchestrates; `krld` remains a standalone binary. Do not add a third entry point.
 
 ## Environment assumptions
 
+- **Doctor:** `pwsh -File .agents/doctor.msvc.ps1` reports whether this machine can build with MSVC, and exits 2 naming each component that is missing. Run it before a host gate, and whenever a build cannot find its compiler. No doctor exists for WSL yet; there, configuring `linux-gcc-debug` is the check. Resolved toolchains and their verification dates live in the Platform targets table above — do not restate them here.
 - CMake 3.25 or newer; C++20; no external runtime dependencies.
 - MSVC on Windows and GCC/Clang on Linux, both with warnings as errors. Sanitizers (ASan/UBSan) are configured on Linux only.
 - doctest is vendored for tests — do not replace it with a fetched framework.
