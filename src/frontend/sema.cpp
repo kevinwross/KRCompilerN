@@ -287,6 +287,9 @@ bool Sema::types_compatible(const std::shared_ptr<Type>& a,
             // Placeholder types are compatible only if they are the same
             // placeholder (same pointer).
             return a == b;
+        case TypeKind::Pair:
+            return types_compatible(a->pair_first_type, b->pair_first_type) &&
+                   types_compatible(a->pair_second_type, b->pair_second_type);
     }
     return false;
 }

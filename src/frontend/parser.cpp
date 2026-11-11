@@ -612,9 +612,33 @@ std::shared_ptr<Type> Parser::parse_type_specifier() {
             return parse_class_spec();
         default:
             if (kind == TokenKind::Identifier) {
+                std::string type_name = std::string(current().text);
+                // M10: pair<T, U> — std::pair type syntax.
+                if (type_name == "pair" && peek().kind == TokenKind::Less) {
+                    advance();  // consume 'pair'
+                    expect(TokenKind::Less);
+                    auto first_type = parse_type_specifier();
+                    if (!first_type) {
+                        error("expected first type argument in pair<T, U>");
+                        return nullptr;
+                    }
+                    expect(TokenKind::Comma);
+                    auto second_type = parse_type_specifier();
+                    if (!second_type) {
+                        error("expected second type argument in pair<T, U>");
+                        return nullptr;
+                    }
+                    expect(TokenKind::Greater);
+                    auto ptype = std::make_shared<Type>();
+                    ptype->kind = TypeKind::Pair;
+                    ptype->name = "pair";
+                    ptype->pair_first_type = first_type;
+                    ptype->pair_second_type = second_type;
+                    return ptype;
+                }
                 // Typedef name — unknown without symbol table.  Treat as
                 // void and report.
-                error("unknown type name: " + std::string(current().text));
+                error("unknown type name: " + type_name);
                 advance();
                 return void_type();
             }

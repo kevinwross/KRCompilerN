@@ -41,6 +41,7 @@ enum class TypeKind : std::uint8_t {
     Auto,           // M6: `auto` placeholder type, resolved from initializer
     Decltype,       // M6: `decltype(expr)` placeholder type
     InitializerList, // M6: std::initializer_list<T>
+    Pair,           // M10: std::pair<T, U>
 };
 
 struct Type : AstNode {
@@ -62,6 +63,9 @@ struct Type : AstNode {
     std::string template_param_name;
     // M6: for TypeKind::Decltype, the expression whose type is queried.
     std::shared_ptr<Expression> decltype_expr;
+    // M10: for TypeKind::Pair, the two element types (first, second).
+    std::shared_ptr<Type> pair_first_type;
+    std::shared_ptr<Type> pair_second_type;
     std::shared_ptr<Type> underlying;
     // M6: vtable layout for classes with virtual functions.
     bool has_vtable = false;          // true if this struct has virtual functions

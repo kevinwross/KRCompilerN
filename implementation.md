@@ -851,7 +851,13 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   allocatable register list. Addresses the M8 Tier 0–2 test coverage
   requirement (plan.md §15.5).
 - All 4 working build configs clean; ctest green on both GCC configs.
-- 203 test cases, 900 assertions, all passing.
+- 205 test cases, 906 assertions, all passing.
+- src/frontend/ast.h — Added `TypeKind::Pair` with `pair_first_type` and `pair_second_type` fields for M10 `std::pair`.
+- src/frontend/ast.cpp — Added `Pair` to `dump_type()`.
+- src/frontend/parser.cpp — Parses `pair<T, U>` as `TypeKind::Pair` in `parse_type_specifier()`.
+- src/frontend/sema.cpp — Added `Pair` case to `types_compatible()`.
+- src/ir/irgen.cpp — Added `Pair` to the opaque/unsupported type list in `lower_type()`.
+- tests/test_sema.cpp — Added 2 M10 pair type tests: type compatibility, first/second type access.
 - src/frontend/lexer.h — Added `KwForward` for M10 `std::forward`.
 - src/frontend/lexer.cpp — Added `forward` keyword mapping to `KwForward`.
 - src/frontend/ast.h — Added `ExpressionKind::Forward` with `forward_operand` and `forward_type` fields.
@@ -974,7 +980,13 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   allocatable register list. Addresses the M8 Tier 0–2 test coverage
   requirement (plan.md §15.5).
 - All 4 working build configs clean; ctest green on both GCC configs.
-- 203 test cases, 900 assertions, all passing.
+- 205 test cases, 906 assertions, all passing.
+- src/frontend/ast.h — Added `TypeKind::Pair` with `pair_first_type` and `pair_second_type` fields for M10 `std::pair`.
+- src/frontend/ast.cpp — Added `Pair` to `dump_type()`.
+- src/frontend/parser.cpp — Parses `pair<T, U>` as `TypeKind::Pair` in `parse_type_specifier()`.
+- src/frontend/sema.cpp — Added `Pair` case to `types_compatible()`.
+- src/ir/irgen.cpp — Added `Pair` to the opaque/unsupported type list in `lower_type()`.
+- tests/test_sema.cpp — Added 2 M10 pair type tests: type compatibility, first/second type access.
 - src/frontend/lexer.h — Added `KwForward` for M10 `std::forward`.
 - src/frontend/lexer.cpp — Added `forward` keyword mapping to `KwForward`.
 - src/frontend/ast.h — Added `ExpressionKind::Forward` with `forward_operand` and `forward_type` fields.

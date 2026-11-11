@@ -127,6 +127,7 @@ void dump_type(std::ostream& out, const std::shared_ptr<Type>& type, int depth) 
         case TypeKind::TemplateParam: out << "typeparam"; break;
         case TypeKind::Auto: out << "auto"; break;
         case TypeKind::Decltype: out << "decltype"; break;
+        case TypeKind::Pair: out << "pair"; break;
     }
     if (!type->name.empty()) {
         out << " '" << type->name << "'";

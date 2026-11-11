@@ -3239,3 +3239,47 @@ TEST_CASE("Sema declaration: thread_local with dynamic initializer") {
     CHECK(sym->is_thread_local);
 }
 
+TEST_CASE("Sema type: pair<T, U> type compatibility") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    // Build pair<int, int>.
+    auto pair_ii = std::make_shared<Type>();
+    pair_ii->kind = TypeKind::Pair;
+    pair_ii->pair_first_type = sema.int_type();
+    pair_ii->pair_second_type = sema.int_type();
+
+    // Build another pair<int, int> (different pointer, same structure).
+    auto pair_ii2 = std::make_shared<Type>();
+    pair_ii2->kind = TypeKind::Pair;
+    pair_ii2->pair_first_type = sema.int_type();
+    pair_ii2->pair_second_type = sema.int_type();
+
+    // Build pair<int, char> (different second).
+    auto pair_ic = std::make_shared<Type>();
+    pair_ic->kind = TypeKind::Pair;
+    pair_ic->pair_first_type = sema.int_type();
+    pair_ic->pair_second_type = sema.char_type();
+
+    // Same-structure pairs are compatible.
+    CHECK(sema.types_compatible(pair_ii, pair_ii2));
+
+    // Different-structure pairs are not compatible.
+    CHECK(!sema.types_compatible(pair_ii, pair_ic));
+}
+
+TEST_CASE("Sema type: pair first and second types are accessible") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    auto p = std::make_shared<Type>();
+    p->kind = TypeKind::Pair;
+    p->pair_first_type = sema.int_type();
+    p->pair_second_type = sema.char_type();
+
+    REQUIRE(p->pair_first_type != nullptr);
+    REQUIRE(p->pair_second_type != nullptr);
+    CHECK(p->pair_first_type->kind == TypeKind::Int);
+    CHECK(p->pair_second_type->kind == TypeKind::Char);
+}
+
