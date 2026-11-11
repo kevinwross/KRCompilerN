@@ -6,10 +6,44 @@ Add entries here rather than editing the managed blocks in `AGENTS.md`; an edit 
 
 **Keep this file current.** When a condition named here changes — a plan leaves DRAFT, a missing directory is created, a trap stops reproducing — update or delete the entry in the same change. A stale instruction is worse than a missing one: it is believed.
 
+## Build policy
+
+Three tiers. Run the smallest one the change needs; never run a larger one "to be safe".
+
+**1. Inner loop — per edit.** One build: the host's debug preset. `windows-msvc-debug` on Windows; `linux-gcc-debug` in WSL or on Linux. `cmake --build --preset …`, then `ctest --preset …`. CMake rebuilds only what changed. While iterating, do not configure or build a release preset, a second compiler, or another host.
+
+**2. Completed change — the matrix for this host.** If the change touched `src/`, `krsrc/`, `sysroot/`, `CMakeLists.txt` or `CMakePresets.json`, build and test every configuration this host can reach:
+
+| Host | Configurations |
+|---|---|
+| Windows | `windows-msvc-debug`, `windows-msvc-release`, plus `linux-gcc-debug`, `linux-gcc-release` in WSL |
+| Linux x64 | `linux-gcc-debug`, `linux-gcc-release` |
+
+Run only your host's row. A change confined to `docs/`, `tests/` or `implementation.md` needs only the inner loop.
+
+**Build the row concurrently.** Each preset has its own binary directory and they are independent, so launch them as separate background jobs and collect the results rather than running them one after another — four at once on Windows, two on Linux. Never point two presets at one build directory.
+
+**3. Milestone gate — clean builds for this host.** Delete the build directories first; incremental output is not a gate. Build and test this host's full row. On Windows that is four configurations covering Windows x64 and Linux x64; on a Linux host, two.
+
+**The gate closes on this host's row, not on every host.** A Windows gate passing says nothing about native Linux or ARM64, and those are expected to need fixing when first built. Do not wait for them, and do not imply they passed — record in `implementation.md` exactly which configurations were built and which remain unverified.
+
+**Target sources rebuild with the compiler.** `krsrc/**` and `sysroot/**` are compiled by `krc`, not by the host compiler — this tree moved them out of `src/` at 746aa1b — so a green host build says nothing about them. After any change under `src/`, rebuild the target artifacts and compare: an artifact that changes when only compiler internals changed is a regression signal — investigate it before committing rather than accepting the new bytes.
+
+## Commits and pushing
+
+**This section authorises local commits without asking, and authorises pushing when a gate passes.**
+
+- Commit after each coherent change, once the tier it required is green. Local commits need no permission.
+- **Push when — and only when — a host gate passes.** A gate is tier 3 above: clean builds for every configuration this host can reach. Do not push on a working change, a partial matrix, or a judgement that it "looks good".
+- A tier 2 change stays local until the next gate, unless the operator asks for it to be published.
+- **Tidy unpublished history before pushing** if that produces a clearer record — squash fixups, reorder, reword. That rewrites only commits nobody has seen.
+- **Never rewrite or force-push anything already pushed.** If CI fails on a pushed commit, fix forward with a new commit.
+- One logical change per commit; subject imperative, at most 72 characters.
+
 ## Definition of done
 
-- [ ] Builds clean with **no warnings** on both toolchains: `/W4 /WX` on MSVC **and** `-Wall -Wextra -Wpedantic -Werror` on GCC/Clang. A change clean on one and warning on the other is incomplete (plan §15.4).
-- [ ] `ctest --test-dir build --build-config Release` is green.
+- [ ] Builds clean with **no warnings** in **every configuration this host built**: `/W4 /WX` on MSVC, `-Wall -Wextra -Wpedantic -Werror` on GCC/Clang (plan §15.4).
+- [ ] `ctest --preset <host-debug>` is green, and so is the test run for every other configuration this host built.
 - [ ] The deterministic-output check passes: the same inputs built twice compare byte-for-byte (§15.6).
 - [ ] `docs/` and `implementation.md` are updated in the same change — every merged change updates the implementation log (§15.7).
 - [ ] An ADR under `docs/decisions/` exists when the change touches ABI, object format, symbol format, target description, or IR.
@@ -52,7 +86,8 @@ Dependencies flow one way: **front end → IR → backend → assembler → link
 
 ## Known traps
 
-- **This is a working copy of `../KRCompiler`.** `plan.md` here and there are the same approved artifact (v0.1, 2026-11-09). Edits made here do not propagate to the original: if you change `plan.md`, say so explicitly in your response so the two can be reconciled, rather than letting them diverge silently.
+- **This began as a working copy of `../KRCompiler`, and the two have diverged.** Both `plan.md` files are approved v0.1, but they are no longer the same document: this tree moved runtime sources to `krsrc/` at 746aa1b, and the original carries later revisions. Edits here do not propagate to it. Before treating a `plan.md` rule as shared, compare the two copies; when you change this one, say so in your response so they can be reconciled deliberately rather than drifting.
+- **`AGENTS.local.md` is an instruction file, not a log.** Update it when a rule it states becomes false; never record progress, status, or milestone state here — that belongs in `implementation.md`. Every edit changes how future work is done, so keep edits rare and reviewable.
 - **The plan is approved (2026-11-09).** Implement under §18.2; `implementation.md` is the live tracker. A `D-xxx` change needs an Appendix A entry; ABI, object, symbol, target, or IR changes also need an ADR under `docs/decisions/`.
 - **"Target" is two words here.** Host platforms (Windows, Linux) versus VM targets (KR32, KR16). Confusing them produces wrong CI matrices, wrong ABI assumptions, and target-descriptor code checked into the front end.
 - **Warnings-as-errors cuts both ways.** A change verified only on MSVC can fail the Linux build on `-Wpedantic`, and vice versa. When a warning appears, fix the code; do not add a pragma, and do not narrow the warning set.
