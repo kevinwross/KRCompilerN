@@ -10,20 +10,22 @@ Add entries here rather than editing the managed blocks in `AGENTS.md`; an edit 
 
 Three tiers. Run the smallest one the change needs; never run a larger one "to be safe".
 
-**1. Inner loop — per edit.** One build: the host's debug preset. `windows-msvc-debug` on Windows; `linux-gcc-debug` in WSL or on Linux. `cmake --build --preset …`, then `ctest --preset …`. CMake rebuilds only what changed. While iterating, do not configure or build a release preset, a second compiler, or another host.
+**1. Inner loop — per edit and per local commit.** One build: the host's debug preset. `windows-msvc-debug` on Windows; `linux-gcc-debug` in WSL or on Linux. `cmake --build --preset …`, then `ctest --preset …`. CMake rebuilds only what changed. While iterating, do not configure or build a release preset, a second compiler, or another host. **A local commit is not a milestone and does not earn a matrix.**
 
-**2. Completed change — the matrix for this host.** If the change touched `src/`, `krsrc/`, `sysroot/`, `CMakeLists.txt` or `CMakePresets.json`, build and test every configuration this host can reach:
+**2. Boundary change — the matrix for this host.** Run the matrix when the change crosses a boundary that can break another configuration: `include/krc/`, `src/ir/`, the target descriptor, the object or symbol format, the ABI, `CMakeLists.txt`, or `CMakePresets.json` — the same categories that require an ADR. Build and test every configuration this host can reach:
 
 | Host | Configurations |
 |---|---|
 | Windows | `windows-msvc-debug`, `windows-msvc-release`, plus `linux-gcc-debug`, `linux-gcc-release` in WSL |
 | Linux x64 | `linux-gcc-debug`, `linux-gcc-release` |
 
-Run only your host's row. A change confined to `docs/`, `tests/` or `implementation.md` needs only the inner loop.
+Run only your host's row. Front-end, backend, runtime, test and documentation changes that cross none of those boundaries stay on the inner loop until the gate.
 
 **Build the row concurrently.** Each preset has its own binary directory and they are independent, so launch them as separate background jobs and collect the results rather than running them one after another — four at once on Windows, two on Linux. Never point two presets at one build directory.
 
 **3. Milestone gate — clean builds for this host.** Delete the build directories first; incremental output is not a gate. Build and test this host's full row. On Windows that is four configurations covering Windows x64 and Linux x64; on a Linux host, two.
+
+**A gate subsumes the matrix.** If the gate is next — because you are about to push, or a milestone is closing — skip tier 2 and let the gate's clean builds cover it. Running the four configurations incrementally and then deleting them to run the same four again is eight builds for one answer.
 
 **The gate closes on this host's row, not on every host.** A Windows gate passing says nothing about native Linux or ARM64, and those are expected to need fixing when first built. Do not wait for them, and do not imply they passed — record in `implementation.md` exactly which configurations were built and which remain unverified.
 
