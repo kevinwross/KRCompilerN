@@ -822,17 +822,19 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
 - krsrc/common/unwinder.h — Unwinder interface header.
 - krsrc/common/host_abi.c — Host ABI shims bridging HAL to POSIX
   (`krc_hal_putchar` → `putc`, `krc_hal_time` → `time`, etc.). Standalone
-  file for host simulation (not linked into `krc_runtime_common` to avoid
-  duplicate symbol conflicts with target-specific HAL implementations).
+  file for host simulation (not compiled by krc since it references host-only
+  symbols).
 - krsrc/kr32/crt0.c — KR32 crt0: calls `main(0, NULL)`, exits via
   `krc_hal_exit`, halts on return.
 - krsrc/kr16/crt0.c — KR16 crt0: same structure as KR32.
 - krsrc/kr16/systemservices.h — New header: KR16 host-service ABI (sys_* service numbers, status codes, struct definitions, function declarations).
 - krsrc/kr16/fileio.c — New file: KR16 C runtime system-service wrappers (sys_version, sys_open, sys_close, sys_read, sys_write, sys_seek, sys_stat, sys_unlink, sys_rename, sys_mkdir, sys_readdir, sys_time, sys_random, sys_fsinfo) plus stdio layer (fopen, fclose, fgetc, fputc, fputs, fread, fwrite, fprintf, fseek, feof, ferror, clearerr, remove, rename). Built as `krc_runtime_kr16` with `-fno-builtin -Wno-nonnull-compare`.
-- krsrc/CMakeLists.txt — `krc_runtime_common` (allocator, ctype,
-  errno, fileio, math, stdio, string, stdlib, time, cxa_runtime, unwinder),
-  `krc_runtime_kr32`, `krc_runtime_kr16` library targets. crt0 not built
-  by default (front end lacks goto/loop support — see moving.md §7 blocker).
+- krsrc/CMakeLists.txt — Custom targets that compile krsrc runtime sources
+  using krc (the KRCompiler), opt-in via `--target krsrc`. Depends on the
+  `krc` target being built first. Output goes to `build/krsrc/<target>/`.
+  Common sources compiled once per target (kr32, kr16). Target-specific
+  sources: kr32/crt0.c, kr32/libc.c, kr16/crt0.c, kr16/fileio.c. crt0 not
+  built by default (front end lacks goto/loop support — see moving.md §7 blocker).
 - sysroot/include/{errno.h,assert.h,ctype.h,time.h,math.h,stdio.h} — Host
   sysroot headers.
 - sysroot/kr16/include/{kr16.h,stddef.h,stdint.h,stdarg.h,errno.h,assert.h,

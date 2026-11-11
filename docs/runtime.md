@@ -29,12 +29,12 @@ It is a work in progress; the authoritative specification is in `plan.md`
   - `krsrc/common/cxa_runtime.cpp` — Itanium C++ ABI __cxa_* runtime
   - `krsrc/common/unwinder.c` — Frame-pointer-based stack unwinder
   - `krsrc/common/unwinder.h` — Unwinder interface header
-  - `krsrc/common/host_abi.c` — Host ABI shims (standalone, not linked
-    into krc_runtime_common to avoid symbol conflicts)
+  - `krsrc/common/host_abi.c` — Host ABI shims (standalone, not compiled
+    by krc since it references host-only symbols)
   - `krsrc/kr32/crt0.c` — KR32 startup
   - `krsrc/kr16/crt0.c` — KR16 startup
-  - `krsrc/CMakeLists.txt` — krc_runtime_common, krc_runtime_kr32,
-    krc_runtime_kr16 targets
+  - `krsrc/CMakeLists.txt` — Custom targets that compile krsrc runtime
+    sources using krc (opt-in via `--target krsrc`)
 - **Frozen:** Not yet frozen.
 
 ## Contents (specified in plan.md)
