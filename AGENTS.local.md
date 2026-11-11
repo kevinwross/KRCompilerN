@@ -44,6 +44,8 @@ linux-gcc-release     PASS <n>/<n>
 not verified: native Linux x64, Linux ARM64
 ```
 
+**The timestamp is when the gate's builds started**, not when the record is written. Take it from the first build job's start line. `local-datetime` answers "what time is it now", which is the wrong question for a record of something that has already finished — a block stamped 14:45 for a gate that built at 14:41 points at a moment when nothing was built, and the timestamp exists to identify which gate this is.
+
 A record saying "all configurations" or "six configurations" is not a record: name each one. Do not scatter the result into milestone evidence or a running log, and do not round the count.
 
 **Target sources rebuild with the compiler.** `krsrc/**` and `sysroot/**` are compiled by `krc`, not by the host compiler — this tree moved them out of `src/` at 746aa1b — so a green host build says nothing about them. After any change under `src/`, rebuild the target artifacts and compare: an artifact that changes when only compiler internals changed is a regression signal — investigate it before committing rather than accepting the new bytes.
