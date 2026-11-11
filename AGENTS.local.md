@@ -14,6 +14,8 @@ Three tiers. Run the smallest one the change needs; never run a larger one "to b
 
 Use the preset form: `cmake --build --preset <preset>`, then `ctest --preset <preset>`. A hand-rolled `cmake -S . -B <dir>` works only because that directory already holds the preset's cache; on a fresh one it silently produces an untyped build with whatever compiler is first on `PATH`.
 
+**A change confined to documentation needs no build.** `implementation.md`, `docs/` and `README`-type edits are verified by reading. A change that alters code, a test or a fixture takes the inner loop.
+
 **2. Boundary change — the matrix for this host.** Run the matrix when the change crosses a boundary that can break another configuration: `include/krc/`, `src/ir/`, the target descriptor, the object or symbol format, the ABI, `CMakeLists.txt`, or `CMakePresets.json` — the same categories that require an ADR. Run it **before committing** the change, and before starting further work in that area; a boundary change committed without the matrix is outside the policy. Build and test every configuration this host can reach:
 
 | Host | Configurations |
@@ -21,7 +23,7 @@ Use the preset form: `cmake --build --preset <preset>`, then `ctest --preset <pr
 | Windows | `windows-msvc-debug`, `windows-msvc-release`, plus `linux-gcc-debug`, `linux-gcc-release` in WSL |
 | Linux x64 | `linux-gcc-debug`, `linux-gcc-release` |
 
-Run only your host's row. Front-end, backend, runtime, test and documentation changes that cross none of those boundaries stay on the inner loop until the gate.
+Run only your host's row. Front-end, backend, runtime and test changes that cross none of those boundaries stay on the inner loop until the gate.
 
 **Build the row concurrently.** Each preset has its own binary directory and they are independent, so launch them as separate background jobs and collect the results rather than running them one after another — four at once on Windows, two on Linux. Never point two presets at one build directory.
 
