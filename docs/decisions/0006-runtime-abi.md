@@ -67,9 +67,10 @@ they use patterns incompatible with the host GCC toolchain:
 
 ## Related
 
-- `src/runtime/kr32/libc.c` — KR32 C runtime (ported)
-- `src/runtime/kr32/kr32os/` — KR32 OS kernel (13 files)
-- `src/runtime/kr16/systemservices.h` — KR16 host-service ABI header
-- `src/runtime/kr16/fileio.c` — KR16 system-service wrappers + stdio
-- `src/runtime/CMakeLists.txt` — Runtime library targets and flags
+- `krsrc/kr32/libc.c` — KR32 C runtime (ported)
+- `krsrc/kr32/kr32os/` — KR32 OS kernel (13 files)
+- `krsrc/kr16/systemservices.h` — KR16 host-service ABI header
+- `krsrc/kr16/fileio.c` — KR16 system-service wrappers + stdio
+- `krsrc/CMakeLists.txt` — Runtime library targets and flags
 - `plan.md` §14 (runtime), §15.4 (warnings-as-errors), D-010, D-011
+

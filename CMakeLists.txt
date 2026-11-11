@@ -49,6 +49,7 @@ endif()
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 add_subdirectory(src)
+add_subdirectory(krsrc)
 if(KRC_BUILD_TESTS AND KRC_DOCTEST_FOUND)
   enable_testing()
   add_subdirectory(tests)

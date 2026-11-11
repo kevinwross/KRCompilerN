@@ -780,56 +780,56 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
 
 ### 2026-11-10T18:12:00-08:00 — M9 progress: runtime/libc
 
-- src/runtime/common/hal.h — HAL interface: `krc_hal_putchar`, `krc_hal_write`,
+- krsrc/common/hal.h — HAL interface: `krc_hal_putchar`, `krc_hal_write`,
   `krc_hal_read`, `krc_hal_open`, `krc_hal_close`, `krc_hal_exit`, `krc_hal_time`,
   `krc_hal_alloc`, `krc_hal_free` (plan.md §14.1, §14.6).
-- src/runtime/common/allocator.c — Coalescing free-list allocator with
+- krsrc/common/allocator.c — Coalescing free-list allocator with
   bump-pointer fallback. Uses `__heap_start`/`__heap_end` linker symbols.
   `malloc(0)` returns NULL; `free(NULL)` is a no-op. Compiles clean with
   `-Wall -Wextra -Wpedantic -Werror`.
-- src/runtime/common/stdio.c — `printf`, `vprintf`, `puts`, `putchar` with
+- krsrc/common/stdio.c — `printf`, `vprintf`, `puts`, `putchar` with
   `%d`, `%u`, `%x`, `%X`, `%p`, `%c`, `%s`, `%%` conversions and `l` length
   modifier. Compiles clean with `-Wall -Wextra -Wpedantic -Werror`.
-- src/runtime/common/string.c — `memcpy`, `memmove`, `memset`, `memcmp`,
+- krsrc/common/string.c — `memcpy`, `memmove`, `memset`, `memcmp`,
   `strlen`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strcmp`, `strncmp`,
   `strchr`, `strrchr`, `strstr`, `strdup`. Compiles clean with
   `-Wall -Wextra -Wpedantic -Werror`.
-- src/runtime/common/stdlib.c — `exit`, `abort`, `atoi`, `atol`, `strtol`,
+- krsrc/common/stdlib.c — `exit`, `abort`, `atoi`, `atol`, `strtol`,
   `abs`, `labs`, `qsort`, `bsearch`. Compiles clean with
   `-Wall -Wextra -Wpedantic -Werror`.
-- src/runtime/common/errno.c — Global `errno` variable plus `__krc_assert_fail`
+- krsrc/common/errno.c — Global `errno` variable plus `__krc_assert_fail`
   for assert support. `errno` initialized to 0. Compiles clean with
   `-Wall -Wextra -Wpedantic -Werror`.
-- src/runtime/common/ctype.c — `isalnum`, `isalpha`, `isascii`, `isblank`,
+- krsrc/common/ctype.c — `isalnum`, `isalpha`, `isascii`, `isblank`,
   `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`,
   `isupper`, `isxdigit`, `tolower`, `toupper`. Compiles clean with
   `-Wall -Wextra -Wpedantic -Werror`.
-- src/runtime/common/time.c — `time()`, `clock()` via `krc_hal_time()`.
+- krsrc/common/time.c — `time()`, `clock()` via `krc_hal_time()`.
   Compiles clean with `-Wall -Wextra -Wpedantic -Werror`.
-- src/runtime/common/math.c — Integer math: `llabs`, `isqrt`, `ipow`,
+- krsrc/common/math.c — Integer math: `llabs`, `isqrt`, `ipow`,
   `idiv_round`, `igcd`. Compiles clean with `-Wall -Wextra -Wpedantic -Werror`.
-- src/runtime/common/fileio.c — `fopen`, `fclose`, `fread`, `fwrite`,
+- krsrc/common/fileio.c — `fopen`, `fclose`, `fread`, `fwrite`,
   `fputc`, `fputs`, `fgetc`, `fprintf` on top of HAL.
   Compiles clean with `-Wall -Wextra -Wpedantic -Werror`.
-- src/runtime/common/cxa_runtime.cpp — Itanium C++ ABI `__cxa_*` runtime:
+- krsrc/common/cxa_runtime.cpp — Itanium C++ ABI `__cxa_*` runtime:
   `__cxa_allocate_exception`, `__cxa_free_exception`, `__cxa_throw`,
   `__cxa_begin_catch`, `__cxa_end_catch`, `__cxa_rethrow`, `__cxa_uncaught_exception`,
   `__cxa_deleted_virtual`, `__cxa_pure_virtual`, `__cxa_bad_cast`,
   `__cxa_bad_typeid`. All abort in v1.0 (exceptions not yet supported).
-- src/runtime/common/unwinder.c — Frame-pointer-based stack unwinder:
+- krsrc/common/unwinder.c — Frame-pointer-based stack unwinder:
   `krc_unwind_backtrace`, `krc_unwind_frame`. Stub on non-KR targets.
   Compiles clean with `-Wall -Wextra -Wpedantic -Werror`.
-- src/runtime/common/unwinder.h — Unwinder interface header.
-- src/runtime/common/host_abi.c — Host ABI shims bridging HAL to POSIX
+- krsrc/common/unwinder.h — Unwinder interface header.
+- krsrc/common/host_abi.c — Host ABI shims bridging HAL to POSIX
   (`krc_hal_putchar` → `putc`, `krc_hal_time` → `time`, etc.). Standalone
   file for host simulation (not linked into `krc_runtime_common` to avoid
   duplicate symbol conflicts with target-specific HAL implementations).
-- src/runtime/kr32/crt0.c — KR32 crt0: calls `main(0, NULL)`, exits via
+- krsrc/kr32/crt0.c — KR32 crt0: calls `main(0, NULL)`, exits via
   `krc_hal_exit`, halts on return.
-- src/runtime/kr16/crt0.c — KR16 crt0: same structure as KR32.
-- src/runtime/kr16/systemservices.h — New header: KR16 host-service ABI (sys_* service numbers, status codes, struct definitions, function declarations).
-- src/runtime/kr16/fileio.c — New file: KR16 C runtime system-service wrappers (sys_version, sys_open, sys_close, sys_read, sys_write, sys_seek, sys_stat, sys_unlink, sys_rename, sys_mkdir, sys_readdir, sys_time, sys_random, sys_fsinfo) plus stdio layer (fopen, fclose, fgetc, fputc, fputs, fread, fwrite, fprintf, fseek, feof, ferror, clearerr, remove, rename). Built as `krc_runtime_kr16` with `-fno-builtin -Wno-nonnull-compare`.
-- src/runtime/CMakeLists.txt — `krc_runtime_common` (allocator, ctype,
+- krsrc/kr16/crt0.c — KR16 crt0: same structure as KR32.
+- krsrc/kr16/systemservices.h — New header: KR16 host-service ABI (sys_* service numbers, status codes, struct definitions, function declarations).
+- krsrc/kr16/fileio.c — New file: KR16 C runtime system-service wrappers (sys_version, sys_open, sys_close, sys_read, sys_write, sys_seek, sys_stat, sys_unlink, sys_rename, sys_mkdir, sys_readdir, sys_time, sys_random, sys_fsinfo) plus stdio layer (fopen, fclose, fgetc, fputc, fputs, fread, fwrite, fprintf, fseek, feof, ferror, clearerr, remove, rename). Built as `krc_runtime_kr16` with `-fno-builtin -Wno-nonnull-compare`.
+- krsrc/CMakeLists.txt — `krc_runtime_common` (allocator, ctype,
   errno, fileio, math, stdio, string, stdlib, time, cxa_runtime, unwinder),
   `krc_runtime_kr32`, `krc_runtime_kr16` library targets. crt0 not built
   by default (front end lacks goto/loop support — see moving.md §7 blocker).
@@ -856,10 +856,10 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
 - All 4 working build configs clean; ctest green on both GCC configs
   and both MSVC configs (debug: 907 assertions, release: 907 assertions).
 - 210 test cases, 920 assertions, all passing.
-- src/runtime/CMakeLists.txt — Added M9/M10 runtime integration: full KR32 `libc.c` and `kr32os/` (13 kernel/user files) built as `krc_runtime_kr32` with `-fno-builtin -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast` (KR32 source uses 32-bit pointer storage patterns incompatible with GCC builtins). KR16 `crt0.c` retained.
-- src/runtime/kr32/libc.c — KR32 C runtime: allocator, buffered stdio, printf/scanf, str*/mem*, strto*, qsort, POSIX-ish file I/O, C++ allocation hooks (3,239 lines). Ported with `uintptr_t` pointer storage, `__kr32_heap_start()`/`__kr32_heap_end()` extern declarations, and forward declarations for `feof`/`strlen`.
-- src/runtime/kr32/kr32os/ — KR32 OS kernel: console, main, memory, process, shell, syscall, timer, traps, user, fault, init, wx (13 files, ~12k LOC).
-- src/runtime/common/ — Existing common runtime (allocator, ctype, errno, fileio, math, stdio, string, stdlib, time, cxa_runtime, unwinder, hal).
+- krsrc/CMakeLists.txt — Added M9/M10 runtime integration: full KR32 `libc.c` and `kr32os/` (13 kernel/user files) built as `krc_runtime_kr32` with `-fno-builtin -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast` (KR32 source uses 32-bit pointer storage patterns incompatible with GCC builtins). KR16 `crt0.c` retained.
+- krsrc/kr32/libc.c — KR32 C runtime: allocator, buffered stdio, printf/scanf, str*/mem*, strto*, qsort, POSIX-ish file I/O, C++ allocation hooks (3,239 lines). Ported with `uintptr_t` pointer storage, `__kr32_heap_start()`/`__kr32_heap_end()` extern declarations, and forward declarations for `feof`/`strlen`.
+- krsrc/kr32/kr32os/ — KR32 OS kernel: console, main, memory, process, shell, syscall, timer, traps, user, fault, init, wx (13 files, ~12k LOC).
+- krsrc/common/ — Existing common runtime (allocator, ctype, errno, fileio, math, stdio, string, stdlib, time, cxa_runtime, unwinder, hal).
 - src/frontend/ast.h — Added `TypeKind::UniquePtr` and `TypeKind::SharedPtr` with `smart_ptr_type` field for M10 smart pointer types.
 - src/frontend/ast.cpp — Added `UniquePtr` and `SharedPtr` to `dump_type()`.
 - src/frontend/parser.cpp — Parses `unique_ptr<T>` and `shared_ptr<T>` as smart pointer types in `parse_type_specifier()`.
@@ -1003,10 +1003,10 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
 - All 4 working build configs clean; ctest green on both GCC configs
   and both MSVC configs (debug: 907 assertions, release: 907 assertions).
 - 210 test cases, 920 assertions, all passing.
-- src/runtime/CMakeLists.txt — Added M9/M10 runtime integration: full KR32 `libc.c` and `kr32os/` (13 kernel/user files) built as `krc_runtime_kr32` with `-fno-builtin -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast` (KR32 source uses 32-bit pointer storage patterns incompatible with GCC builtins). KR16 `crt0.c` retained.
-- src/runtime/kr32/libc.c — KR32 C runtime: allocator, buffered stdio, printf/scanf, str*/mem*, strto*, qsort, POSIX-ish file I/O, C++ allocation hooks (3,239 lines). Ported with `uintptr_t` pointer storage, `__kr32_heap_start()`/`__kr32_heap_end()` extern declarations, and forward declarations for `feof`/`strlen`.
-- src/runtime/kr32/kr32os/ — KR32 OS kernel: console, main, memory, process, shell, syscall, timer, traps, user, fault, init, wx (13 files, ~12k LOC).
-- src/runtime/common/ — Existing common runtime (allocator, ctype, errno, fileio, math, stdio, string, stdlib, time, cxa_runtime, unwinder, hal).
+- krsrc/CMakeLists.txt — Added M9/M10 runtime integration: full KR32 `libc.c` and `kr32os/` (13 kernel/user files) built as `krc_runtime_kr32` with `-fno-builtin -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast` (KR32 source uses 32-bit pointer storage patterns incompatible with GCC builtins). KR16 `crt0.c` retained.
+- krsrc/kr32/libc.c — KR32 C runtime: allocator, buffered stdio, printf/scanf, str*/mem*, strto*, qsort, POSIX-ish file I/O, C++ allocation hooks (3,239 lines). Ported with `uintptr_t` pointer storage, `__kr32_heap_start()`/`__kr32_heap_end()` extern declarations, and forward declarations for `feof`/`strlen`.
+- krsrc/kr32/kr32os/ — KR32 OS kernel: console, main, memory, process, shell, syscall, timer, traps, user, fault, init, wx (13 files, ~12k LOC).
+- krsrc/common/ — Existing common runtime (allocator, ctype, errno, fileio, math, stdio, string, stdlib, time, cxa_runtime, unwinder, hal).
 - src/frontend/ast.h — Added `TypeKind::UniquePtr` and `TypeKind::SharedPtr` with `smart_ptr_type` field for M10 smart pointer types.
 - src/frontend/ast.cpp — Added `UniquePtr` and `SharedPtr` to `dump_type()`.
 - src/frontend/parser.cpp — Parses `unique_ptr<T>` and `shared_ptr<T>` as smart pointer types in `parse_type_specifier()`.
@@ -1106,3 +1106,4 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   parameter pack" (template <typename... Args>) and "mixed variadic and regular
   type parameters" (template <typename T, typename... Rest>). Addresses M10
   variadic templates requirement (plan.md §14.3).
+

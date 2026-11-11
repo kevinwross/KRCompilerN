@@ -4,7 +4,7 @@
 /* HAL — hardware abstraction layer interface (plan.md §14.1).
  *
  * The runtime calls these host-service functions to interact with the VM.
- * Each target provides its own implementation in src/runtime/<target>/.
+ * Each target provides its own implementation in krsrc/<target>/.
  */
 
 #include <stddef.h>
@@ -45,3 +45,4 @@ void krc_hal_free(void* ptr);
 #endif
 
 #endif /* KRC_RUNTIME_HAL_H */
+

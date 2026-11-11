@@ -39,7 +39,7 @@ Dependencies flow one way: **front end → IR → backend → assembler → link
 - `src/ir/` — typed SSA and IR validation. Must not depend on a specific target; target-specific choices belong in `src/backend/` and the target descriptor.
 - `src/backend/` — instruction selection, register allocation, frames, asm printing, per-target descriptors. Depends on IR, never the reverse.
 - `src/asm/`, `src/linker/`, `src/debug/` — object format, `krld`, symbol/debug format. The linker must not reach back into the front end.
-- `src/runtime/` — runtime and libc support for the VMs. Must not depend on compiler internals.
+- `krsrc/` — runtime and libc support for the VMs. Must not depend on compiler internals.
 - `include/krc/` — the public surface. Keep it minimal; internal headers stay under `src/`.
 - One compiler driver: `krc` orchestrates; `krld` remains a standalone binary. Do not add a third entry point.
 
@@ -63,3 +63,4 @@ Dependencies flow one way: **front end → IR → backend → assembler → link
 - **The compiler is one program with many outputs** (`-c` object, `-S` assembly, `-o` linked image). Do not grow a second driver to handle a case; extend `krc`.
 - **CI runs the full matrix.** A golden or differential test that passes locally on one host proves nothing about the other; report which toolchain you ran.
 - **Timestamps are read, not remembered.** Call `local-datetime` immediately before writing any timestamp, and copy its `iso` field verbatim — `2026-11-09T21:57:03-08:00`. Do not compose one from `year`/`month`/`day` (they are not zero-padded), and do not put `datetime` or `date` in a record: `11/9/2026` is locale-ordered and ambiguous. A timestamp inferred from the conversation or from a build artefact is stale by however long the work has run.
+

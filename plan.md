@@ -541,7 +541,7 @@ IRGen lowers the typed AST to SSA:
 - `src/asm/` — assembler framework, syntax modules, encoders, relocations.
 - `src/linker/` — object reader/writer, linker core, layout scripts, image writers.
 - `src/debug/` — symbol/debug format reader/writer, dumper, shared debugger reader.
-- `src/runtime/` — common runtime, HAL, per-target stubs, sysroot.
+- `krsrc/` — common runtime, HAL, per-target stubs, sysroot.
 - `src/tools/` — `krc`, `krld`, `krsym` (optional dumper front end).
 - `include/krc/` — public library APIs.
 - `tests/` — unit, integration, differential, conformance, golden, corpus.
@@ -1113,8 +1113,8 @@ All debuggers MUST use this library; no debugger parses the format directly.
 
 ### 14.1 Architecture
 
-- `src/runtime/common/` — portable C/C++ runtime, HAL interfaces, allocator, stdio, string, math helpers, startup logic.
-- `src/runtime/<target>/` — crt0, syscall stubs, soft-float/64-bit helpers, unwinder, context switch, target-specific `memcpy`/`memset` fast paths.
+- `krsrc/common/` — portable C/C++ runtime, HAL interfaces, allocator, stdio, string, math helpers, startup logic.
+- `krsrc/<target>/` — crt0, syscall stubs, soft-float/64-bit helpers, unwinder, context switch, target-specific `memcpy`/`memset` fast paths.
 - `sysroot/<target>/` — headers and prebuilt libraries.
 - The runtime is compiled by `krc` for each target; a C-only bootstrap path is available for the first bring-up.
 
@@ -1701,3 +1701,4 @@ Appendix D.1 and D.2 track language features; target-specific surfaces are liste
 ---
 
 *End of plan.md (approved v0.1, 2026-11-09).*
+
