@@ -1176,6 +1176,8 @@ bool Sema::type_expression(Expression& expr) {
             return type_lambda(expr);
         case ExpressionKind::Move:
             return type_move(expr);
+        case ExpressionKind::Forward:
+            return type_forward(expr);
         case ExpressionKind::FoldExpression:
             return type_fold_expression(expr);
         case ExpressionKind::Throw:
@@ -1305,6 +1307,27 @@ bool Sema::type_move(Expression& expr) {
     // Result type is rvalue reference to the operand's type.
     expr.type = rvalue_reference_to(expr.move_operand->type);
     expr.is_lvalue = false; // rvalue reference is a prvalue
+    expr.is_constant = false;
+    return true;
+}
+
+bool Sema::type_forward(Expression& expr) {
+    // `forward<T>(expr)` preserves the value category of its operand.
+    if (!expr.forward_operand) {
+        return fail(DiagnosticID{4016, "sema-error-forward"},
+                    "forward: missing operand", expr.location);
+    }
+    if (!type_expression(*expr.forward_operand)) {
+        return false;
+    }
+    // If a type was specified, the result is a reference to that type.
+    // Otherwise, deduce from the operand's type.
+    if (expr.forward_type) {
+        expr.type = reference_to(expr.forward_type);
+    } else {
+        expr.type = expr.forward_operand->type;
+    }
+    expr.is_lvalue = false; // forward yields an xvalue/prvalue
     expr.is_constant = false;
     return true;
 }

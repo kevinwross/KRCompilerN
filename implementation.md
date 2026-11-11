@@ -851,7 +851,16 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   allocatable register list. Addresses the M8 Tier 0–2 test coverage
   requirement (plan.md §15.5).
 - All 4 working build configs clean; ctest green on both GCC configs.
-- 201 test cases, 888 assertions, all passing.
+- 203 test cases, 900 assertions, all passing.
+- src/frontend/lexer.h — Added `KwForward` for M10 `std::forward`.
+- src/frontend/lexer.cpp — Added `forward` keyword mapping to `KwForward`.
+- src/frontend/ast.h — Added `ExpressionKind::Forward` with `forward_operand` and `forward_type` fields.
+- src/frontend/ast.cpp — Added `Forward` to `dump_expression`.
+- src/frontend/parser.cpp — Parses `forward<T>(expr)` as `ExpressionKind::Forward` in `parse_unary_expression()`.
+- src/frontend/sema.h — Declared `type_forward()`.
+- src/frontend/sema.cpp — Added `type_forward()` for `std::forward<T>(x)` type checking, dispatched from `type_expression()`.
+- src/ir/irgen.cpp — Added `Forward` to unimplemented expression kinds.
+- tests/test_sema.cpp — Added 2 M10 forward tests: forward preserves referenced type, forward deduces from operand.
 - src/frontend/ast.h — Added `is_thread_local` field to `Declaration` for M10
   dynamic TLS support (`thread_local` storage duration).
 - src/frontend/sema.h — Added `is_thread_local` field to `Symbol`.
@@ -965,7 +974,16 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   allocatable register list. Addresses the M8 Tier 0–2 test coverage
   requirement (plan.md §15.5).
 - All 4 working build configs clean; ctest green on both GCC configs.
-- 201 test cases, 888 assertions, all passing.
+- 203 test cases, 900 assertions, all passing.
+- src/frontend/lexer.h — Added `KwForward` for M10 `std::forward`.
+- src/frontend/lexer.cpp — Added `forward` keyword mapping to `KwForward`.
+- src/frontend/ast.h — Added `ExpressionKind::Forward` with `forward_operand` and `forward_type` fields.
+- src/frontend/ast.cpp — Added `Forward` to `dump_expression`.
+- src/frontend/parser.cpp — Parses `forward<T>(expr)` as `ExpressionKind::Forward` in `parse_unary_expression()`.
+- src/frontend/sema.h — Declared `type_forward()`.
+- src/frontend/sema.cpp — Added `type_forward()` for `std::forward<T>(x)` type checking, dispatched from `type_expression()`.
+- src/ir/irgen.cpp — Added `Forward` to unimplemented expression kinds.
+- tests/test_sema.cpp — Added 2 M10 forward tests: forward preserves referenced type, forward deduces from operand.
 - src/frontend/ast.h — Added `is_thread_local` field to `Declaration` for M10
   dynamic TLS support (`thread_local` storage duration).
 - src/frontend/sema.h — Added `is_thread_local` field to `Symbol`.

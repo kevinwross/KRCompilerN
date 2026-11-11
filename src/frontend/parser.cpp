@@ -1836,6 +1836,36 @@ std::shared_ptr<Expression> Parser::parse_unary_expression() {
             }
             return expr;
         }
+        case TokenKind::KwForward: {
+            // std::forward<T>(x) — forward with an explicit type argument.
+            advance();
+            auto expr = std::make_shared<Expression>();
+            expr->kind = ExpressionKind::Forward;
+            expr->location = current().location;
+            expect(TokenKind::LParen);
+            // Parse the type argument: forward<T>(x)
+            if (current().kind != TokenKind::Comma &&
+                current().kind != TokenKind::RParen) {
+                StorageClass storage = StorageClass::None;
+                Linkage linkage = Linkage::None;
+                bool is_typedef = false, is_extern = false, is_static = false;
+                bool is_const = false, is_volatile = false, is_restrict = false;
+                bool is_inline = false, is_noreturn = false;
+                bool is_noexcept = false, is_constexpr = false, has_alignas = false;
+                expr->forward_type = parse_declaration_specifiers(
+                    storage, linkage, is_typedef, is_extern, is_static,
+                    is_const, is_volatile, is_restrict, is_inline, is_noreturn,
+                    is_noexcept, is_constexpr, has_alignas);
+            }
+            expect(TokenKind::Comma);
+            expr->forward_operand = parse_cast_expression();
+            if (!expr->forward_operand) {
+                error("expected expression after ',' in forward");
+                return nullptr;
+            }
+            expect(TokenKind::RParen);
+            return expr;
+        }
         case TokenKind::KwThrow: {
             advance();
             auto expr = std::make_shared<Expression>();

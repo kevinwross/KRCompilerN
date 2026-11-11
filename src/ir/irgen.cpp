@@ -452,6 +452,7 @@ IRValue* IRGen::lower_expression(const std::shared_ptr<Expression>& expr) {
         case ExpressionKind::Delete:
         case ExpressionKind::Lambda:
         case ExpressionKind::Move:
+        case ExpressionKind::Forward:
         case ExpressionKind::FoldExpression:
         case ExpressionKind::Throw:
         case ExpressionKind::Typeid:

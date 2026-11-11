@@ -45,7 +45,8 @@ It is a work in progress; the authoritative specification is in `plan.md`
     parameters"), 3 new M10 fold expression tests (unary right fold,
     binary left fold, unary left fold AST nodes), 3 new M10 EH/RTTI tests
     (throw expression type checking, typeid of type, typeid of expression),
-    and 2 new M10 thread_local tests (storage duration, dynamic initializer).
+    and 2 new M10 thread_local tests (storage duration, dynamic initializer),
+    and 2 new M10 forward tests (preserves referenced type, deduces from operand).
   - `tests/third_party/doctest/doctest.h` — vendored doctest (the only
     vendored test dependency).
 - **Frozen:** Not yet frozen.

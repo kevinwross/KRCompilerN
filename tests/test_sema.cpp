@@ -2732,6 +2732,58 @@ TEST_CASE("Sema move: move with non-trivial type produces rvalue reference") {
     CHECK(expr->type->pointee == sema.int_type());
 }
 
+TEST_CASE("Sema forward: forward preserves referenced type") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    // Build: forward<int>(x) where x has type int
+    auto operand = std::make_shared<Expression>();
+    operand->kind = ExpressionKind::IntegerLiteral;
+    operand->type = sema.int_type();
+    operand->is_constant = true;
+    operand->is_lvalue = false;
+
+    auto forward_type = std::make_shared<Type>();
+    forward_type->kind = TypeKind::Int;
+
+    auto expr = std::make_shared<Expression>();
+    expr->kind = ExpressionKind::Forward;
+    expr->forward_type = forward_type;
+    expr->forward_operand = operand;
+
+    CHECK(sema.type_forward(*expr));
+
+    REQUIRE(expr->type != nullptr);
+    CHECK(expr->type->kind == TypeKind::Reference);
+    REQUIRE(expr->type->pointee != nullptr);
+    CHECK(expr->type->pointee->kind == TypeKind::Int);
+    CHECK(!expr->is_lvalue);
+    CHECK(!expr->is_constant);
+}
+
+TEST_CASE("Sema forward: forward without explicit type deduces from operand") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    // Build: forward(x) where x is an int lvalue
+    auto operand = std::make_shared<Expression>();
+    operand->kind = ExpressionKind::IntegerLiteral;
+    operand->type = sema.int_type();
+    operand->is_constant = false;
+    operand->is_lvalue = true;
+
+    auto expr = std::make_shared<Expression>();
+    expr->kind = ExpressionKind::Forward;
+    expr->forward_operand = operand;
+
+    CHECK(sema.type_forward(*expr));
+
+    REQUIRE(expr->type != nullptr);
+    CHECK(expr->type == sema.int_type());
+    CHECK(!expr->is_lvalue);
+    CHECK(!expr->is_constant);
+}
+
 TEST_CASE("Sema initializer_list: initializer_list type compatibility") {
     DiagnosticEngine diagnostics;
     Sema sema(diagnostics);

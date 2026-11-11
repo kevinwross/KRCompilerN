@@ -247,7 +247,7 @@ enum class ExpressionKind : std::uint8_t {
     Cast, SizeofExpr, SizeofType, MemberAccess, ArraySubscript,
     CompoundLiteral, StatementExpr, StringLiteralConcat,
     New, Delete,
-    Lambda, Move,
+    Lambda, Move, Forward,
     FoldExpression,  // M10: C++17 fold expression (pack op ...)
     Throw, Typeid,   // M10: C++ exception handling and RTTI
 };
@@ -336,6 +336,11 @@ struct Expression : AstNode {
     std::shared_ptr<Statement> lambda_body;
     // For ExpressionKind::Move: the expression being moved (std::move(x)).
     std::shared_ptr<Expression> move_operand;
+
+    // For ExpressionKind::Forward: the expression being forwarded (std::forward<T>(x)).
+    std::shared_ptr<Expression> forward_operand;
+    // The type T in std::forward<T>(x), used to determine the value category.
+    std::shared_ptr<Type> forward_type;
 
     // For ExpressionKind::FoldExpression: C++17 fold expression.
     // fold_kind: 0 = unary right (pack op ...), 1 = unary left (... op pack),

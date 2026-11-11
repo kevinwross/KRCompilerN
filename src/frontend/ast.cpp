@@ -190,6 +190,8 @@ void dump_expression(std::ostream& out, const std::shared_ptr<Expression>& expr,
             out << "lambda"; break;
         case ExpressionKind::Move:
             out << "move"; break;
+        case ExpressionKind::Forward:
+            out << "forward"; break;
         case ExpressionKind::FunctionCall:
             out << "call"; break;
         case ExpressionKind::Unary:

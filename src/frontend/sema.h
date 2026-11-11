@@ -240,6 +240,7 @@ public:
     bool type_delete(Expression& expr);
     bool type_lambda(Expression& expr);
     bool type_move(Expression& expr);
+    bool type_forward(Expression& expr);
     bool type_fold_expression(Expression& expr);
     bool type_throw(Expression& expr);
     bool type_typeid(Expression& expr);

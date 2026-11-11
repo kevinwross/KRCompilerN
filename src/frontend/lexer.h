@@ -110,6 +110,7 @@ enum class TokenKind : std::uint16_t {
     KwConstexpr,
     KwDecltype,
     KwMove,
+    KwForward,
     KwNoexcept,
     KwNullptr,
     KwStaticAssertCpp,
