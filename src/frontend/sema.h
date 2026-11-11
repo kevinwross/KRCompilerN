@@ -28,6 +28,7 @@ struct Symbol {
     bool is_volatile = false;
     bool is_restrict = false;
     bool is_static = false;
+    bool is_thread_local = false;  // M10: thread_local storage duration
     bool is_extern = false;
     bool is_virtual = false;      // C++: virtual member function
     bool is_inline = false;       // C++: inline function/variable specifier

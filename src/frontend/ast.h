@@ -152,6 +152,7 @@ struct Declaration : AstNode {
     bool is_typedef = false;
     bool is_extern = false;
     bool is_static = false;
+    bool is_thread_local = false;  // M10: C++ thread_local storage duration
     bool is_const = false;
     bool is_volatile = false;
     bool is_restrict = false;

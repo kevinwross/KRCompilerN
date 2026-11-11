@@ -666,6 +666,7 @@ bool Sema::walk_declaration(Declaration& decl) {
         sym->is_volatile = decl.is_volatile;
         sym->is_restrict = decl.is_restrict;
         sym->is_static = decl.is_static;
+        sym->is_thread_local = (decl.storage == StorageClass::ThreadLocal);
         sym->is_extern = decl.is_extern;
         sym->is_virtual = decl.is_virtual;
         sym->is_inline = decl.is_inline;

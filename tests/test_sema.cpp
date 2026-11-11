@@ -3105,3 +3105,85 @@ TEST_CASE("Sema expression: typeid of expression") {
     CHECK(typeid_expr->is_constant == true);
 }
 
+TEST_CASE("Sema declaration: thread_local storage duration") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    // Build: thread_local int x = 42;
+    auto tu = std::make_shared<TranslationUnit>();
+
+    auto decl = std::make_shared<Declaration>();
+    decl->type = sema.int_type();
+    decl->storage = StorageClass::ThreadLocal;
+    decl->is_thread_local = true;
+    auto dec = std::make_shared<Declarator>();
+    dec->name = "x";
+    decl->declarators.push_back(dec);
+
+    auto init = std::make_shared<Initializer>();
+    init->kind = Initializer::Kind::Expression;
+    auto init_expr = std::make_shared<Expression>();
+    init_expr->kind = ExpressionKind::IntegerLiteral;
+    init_expr->int_literal_value = 42;
+    init_expr->type = sema.int_type();
+    init_expr->is_constant = true;
+    init->expr = init_expr;
+    decl->initializers.push_back(init);
+
+    tu->declarations.push_back(decl);
+
+    // Sema should accept the thread_local declaration.
+    CHECK(sema.analyze(*tu));
+
+    // Verify the symbol has thread_local flag set.
+    auto sym = sema.lookup("x");
+    REQUIRE(sym != nullptr);
+    CHECK(sym->is_thread_local);
+    CHECK(sym->storage == StorageClass::ThreadLocal);
+}
+
+TEST_CASE("Sema declaration: thread_local with dynamic initializer") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    // Build: thread_local int y = 1 + 2;
+    auto tu = std::make_shared<TranslationUnit>();
+
+    auto decl = std::make_shared<Declaration>();
+    decl->type = sema.int_type();
+    decl->storage = StorageClass::ThreadLocal;
+    decl->is_thread_local = true;
+    auto dec = std::make_shared<Declarator>();
+    dec->name = "y";
+    decl->declarators.push_back(dec);
+
+    // Dynamic initializer: a binary expression (not constant-foldable at parse time)
+    auto add_expr = std::make_shared<Expression>();
+    add_expr->kind = ExpressionKind::Binary;
+    add_expr->binary_op = BinaryOp::Add;
+    auto left = std::make_shared<Expression>();
+    left->kind = ExpressionKind::IntegerLiteral;
+    left->int_literal_value = 1;
+    left->type = sema.int_type();
+    auto right = std::make_shared<Expression>();
+    right->kind = ExpressionKind::IntegerLiteral;
+    right->int_literal_value = 2;
+    right->type = sema.int_type();
+    add_expr->binary_left = left;
+    add_expr->binary_right = right;
+
+    auto init = std::make_shared<Initializer>();
+    init->kind = Initializer::Kind::Expression;
+    init->expr = add_expr;
+    decl->initializers.push_back(init);
+
+    tu->declarations.push_back(decl);
+
+    // Sema should accept the thread_local declaration with dynamic init.
+    CHECK(sema.analyze(*tu));
+
+    auto sym = sema.lookup("y");
+    REQUIRE(sym != nullptr);
+    CHECK(sym->is_thread_local);
+}
+

@@ -43,9 +43,9 @@ It is a work in progress; the authoritative specification is in `plan.md`
   - `tests/test_sema.cpp` — Includes 2 new M10 variadic template tests
     ("variadic type parameter pack", "mixed variadic and regular type
     parameters"), 3 new M10 fold expression tests (unary right fold,
-    binary left fold, unary left fold AST nodes), and 3 new M10 EH/RTTI
-    tests (throw expression type checking, typeid of type, typeid of
-    expression).
+    binary left fold, unary left fold AST nodes), 3 new M10 EH/RTTI tests
+    (throw expression type checking, typeid of type, typeid of expression),
+    and 2 new M10 thread_local tests (storage duration, dynamic initializer).
   - `tests/third_party/doctest/doctest.h` — vendored doctest (the only
     vendored test dependency).
 - **Frozen:** Not yet frozen.

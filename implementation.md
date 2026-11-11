@@ -851,7 +851,15 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   allocatable register list. Addresses the M8 Tier 0–2 test coverage
   requirement (plan.md §15.5).
 - All 4 working build configs clean; ctest green on both GCC configs.
-- 199 test cases, 881 assertions, all passing.
+- 201 test cases, 888 assertions, all passing.
+- src/frontend/ast.h — Added `is_thread_local` field to `Declaration` for M10
+  dynamic TLS support (`thread_local` storage duration).
+- src/frontend/sema.h — Added `is_thread_local` field to `Symbol`.
+- src/frontend/sema.cpp — `walk_declaration()` now derives
+  `sym->is_thread_local` from `decl.storage == StorageClass::ThreadLocal`.
+- tests/test_sema.cpp — Added 2 M10 thread_local tests: "thread_local storage
+  duration" (static init) and "thread_local with dynamic initializer"
+  (binary expression init).
 - src/frontend/ast.h — Added `StatementKind::Try`/`Catch` and
   `ExpressionKind::Throw`/`Typeid` for M10 EH/RTTI support. Added
   `try_block`/`catch_clauses`/`catch_exception_decl`/`catch_body` to
@@ -957,7 +965,15 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   allocatable register list. Addresses the M8 Tier 0–2 test coverage
   requirement (plan.md §15.5).
 - All 4 working build configs clean; ctest green on both GCC configs.
-- 199 test cases, 881 assertions, all passing.
+- 201 test cases, 888 assertions, all passing.
+- src/frontend/ast.h — Added `is_thread_local` field to `Declaration` for M10
+  dynamic TLS support (`thread_local` storage duration).
+- src/frontend/sema.h — Added `is_thread_local` field to `Symbol`.
+- src/frontend/sema.cpp — `walk_declaration()` now derives
+  `sym->is_thread_local` from `decl.storage == StorageClass::ThreadLocal`.
+- tests/test_sema.cpp — Added 2 M10 thread_local tests: "thread_local storage
+  duration" (static init) and "thread_local with dynamic initializer"
+  (binary expression init).
 - src/frontend/ast.h — Added `StatementKind::Try`/`Catch` and
   `ExpressionKind::Throw`/`Typeid` for M10 EH/RTTI support. Added
   `try_block`/`catch_clauses`/`catch_exception_decl`/`catch_body` to
