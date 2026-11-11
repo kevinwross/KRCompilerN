@@ -295,6 +295,8 @@ bool IRGen::lower_statement(const std::shared_ptr<Statement>& stmt) {
         case StatementKind::Goto:
         case StatementKind::Continue:
         case StatementKind::Break:
+        case StatementKind::Try:
+        case StatementKind::Catch:
             diagnostics_.error(
                 {0, "irgen-unimplemented"},
                 "statement kind not yet supported in IRGen",
@@ -451,6 +453,8 @@ IRValue* IRGen::lower_expression(const std::shared_ptr<Expression>& expr) {
         case ExpressionKind::Lambda:
         case ExpressionKind::Move:
         case ExpressionKind::FoldExpression:
+        case ExpressionKind::Throw:
+        case ExpressionKind::Typeid:
             diagnostics_.error(
                 {0, "irgen-unimplemented"},
                 "expression kind not yet supported in IRGen",

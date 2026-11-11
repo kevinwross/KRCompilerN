@@ -107,6 +107,7 @@ private:
     std::shared_ptr<Statement> parse_selection_statement();
     std::shared_ptr<Statement> parse_iteration_statement();
     std::shared_ptr<Statement> parse_jump_statement();
+    std::shared_ptr<Statement> parse_eh_statement();
     std::shared_ptr<Statement> parse_labeled_statement();
 
     // --- Expressions ------------------------------------------------------

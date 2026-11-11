@@ -1098,6 +1098,26 @@ bool Sema::walk_statement(Statement& stmt) {
         case StatementKind::Case:
         case StatementKind::Default:
         case StatementKind::Switch:
+        case StatementKind::Try: {
+            // M10: walk the try block and all catch clauses.
+            if (stmt.try_block) {
+                if (!walk_statement(*stmt.try_block)) return false;
+            }
+            for (auto& cc : stmt.catch_clauses) {
+                if (!walk_statement(*cc)) return false;
+            }
+            return true;
+        }
+        case StatementKind::Catch: {
+            // M10: walk the catch exception declaration and body.
+            if (stmt.catch_exception_decl) {
+                if (!walk_declaration(*stmt.catch_exception_decl)) return false;
+            }
+            if (stmt.catch_body) {
+                if (!walk_statement(*stmt.catch_body)) return false;
+            }
+            return true;
+        }
         case StatementKind::Null:
             return true;
     }
@@ -1157,6 +1177,10 @@ bool Sema::type_expression(Expression& expr) {
             return type_move(expr);
         case ExpressionKind::FoldExpression:
             return type_fold_expression(expr);
+        case ExpressionKind::Throw:
+            return type_throw(expr);
+        case ExpressionKind::Typeid:
+            return type_typeid(expr);
         default:
             // Unknown expression kind — untyped.
             return true;
@@ -1340,6 +1364,53 @@ bool Sema::type_fold_expression(Expression& expr) {
     expr.type = expr.fold_operand->type;
     expr.is_lvalue = false; // fold expressions are prvalues
     expr.is_constant = expr.fold_operand->is_constant;
+    return true;
+}
+
+bool Sema::type_throw(Expression& expr) {
+    // M10: type-check a throw expression: `throw expr;`
+    if (!expr.throw_operand) {
+        return fail(DiagnosticID{4017, "sema-error-throw"},
+                    "throw: missing operand", expr.location);
+    }
+    if (!type_expression(*expr.throw_operand)) return false;
+    lvalue_to_rvalue(*expr.throw_operand);
+
+    // A throw expression has type void and is a prvalue.
+    expr.type = builtin_void_;
+    expr.is_lvalue = false;
+    expr.is_constant = false;
+    return true;
+}
+
+bool Sema::type_typeid(Expression& expr) {
+    // M10: type-check a typeid expression: `typeid(T)` or `typeid(expr)`.
+    if (expr.typeid_is_type) {
+        if (!expr.typeid_type) {
+            return fail(DiagnosticID{4018, "sema-error-typeid"},
+                        "typeid: missing type", expr.location);
+        }
+        // typeid(T) — the type must be complete.
+        if (expr.typeid_type->kind == TypeKind::Void ||
+            expr.typeid_type->kind == TypeKind::Incomplete) {
+            return fail(DiagnosticID{4018, "sema-error-typeid"},
+                "typeid: cannot apply to incomplete or void type",
+                expr.location);
+        }
+    } else {
+        if (!expr.typeid_expr) {
+            return fail(DiagnosticID{4018, "sema-error-typeid"},
+                        "typeid: missing expression", expr.location);
+        }
+        if (!type_expression(*expr.typeid_expr)) return false;
+        lvalue_to_rvalue(*expr.typeid_expr);
+    }
+
+    // typeid yields a const std::type_info&; model as a pointer to a
+    // unique type_info type. For now, use void* as a placeholder.
+    expr.type = pointer_to(builtin_void_);
+    expr.is_lvalue = false;
+    expr.is_constant = true;
     return true;
 }
 

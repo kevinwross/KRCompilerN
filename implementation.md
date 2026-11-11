@@ -851,7 +851,29 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   allocatable register list. Addresses the M8 Tier 0–2 test coverage
   requirement (plan.md §15.5).
 - All 4 working build configs clean; ctest green on both GCC configs.
-- 196 test cases, 869 assertions, all passing.
+- 199 test cases, 881 assertions, all passing.
+- src/frontend/ast.h — Added `StatementKind::Try`/`Catch` and
+  `ExpressionKind::Throw`/`Typeid` for M10 EH/RTTI support. Added
+  `try_block`/`catch_clauses`/`catch_exception_decl`/`catch_body` to
+  `Statement`, and `throw_operand`/`typeid_type`/`typeid_expr`/`typeid_is_type`
+  to `Expression`.
+- src/frontend/ast.cpp — Added `Throw`/`Typeid` to `dump_expression` and
+  `Try`/`Catch` to `dump_statement`.
+- src/frontend/parser.cpp — `parse_statement()` dispatches `KwTry` to
+  `parse_eh_statement()` (new function parsing try/catch blocks). `throw`
+  parsed as unary expression in `parse_unary_expression()`. `typeid(type)`
+  and `typeid(expr)` parsed as primary expressions in
+  `parse_primary_expression()`.
+- src/frontend/parser.h — Declared `parse_eh_statement()`.
+- src/frontend/sema.cpp — Added `type_throw()` and `type_typeid()` for M10
+  EH/RTTI type checking, dispatched from `type_expression()`. Added
+  `Try`/`Catch` cases to `walk_statement()`.
+- src/frontend/sema.h — Declared `type_throw()` and `type_typeid()`.
+- src/ir/irgen.cpp — Added `Throw`/`Typeid` to unimplemented expression kinds
+  and `Try`/`Catch` to unimplemented statement kinds (produce diagnostics,
+  not crashes).
+- tests/test_sema.cpp — Added 3 M10 EH/RTTI tests: throw expression type
+  checking, typeid of type, typeid of expression.
 - src/frontend/sema.cpp — Added `type_fold_expression()` for M10 C++17 fold
   expression type checking; dispatched from `type_expression()`.
 - src/frontend/sema.h — Declared `type_fold_expression()`.
@@ -935,7 +957,29 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   allocatable register list. Addresses the M8 Tier 0–2 test coverage
   requirement (plan.md §15.5).
 - All 4 working build configs clean; ctest green on both GCC configs.
-- 196 test cases, 869 assertions, all passing.
+- 199 test cases, 881 assertions, all passing.
+- src/frontend/ast.h — Added `StatementKind::Try`/`Catch` and
+  `ExpressionKind::Throw`/`Typeid` for M10 EH/RTTI support. Added
+  `try_block`/`catch_clauses`/`catch_exception_decl`/`catch_body` to
+  `Statement`, and `throw_operand`/`typeid_type`/`typeid_expr`/`typeid_is_type`
+  to `Expression`.
+- src/frontend/ast.cpp — Added `Throw`/`Typeid` to `dump_expression` and
+  `Try`/`Catch` to `dump_statement`.
+- src/frontend/parser.cpp — `parse_statement()` dispatches `KwTry` to
+  `parse_eh_statement()` (new function parsing try/catch blocks). `throw`
+  parsed as unary expression in `parse_unary_expression()`. `typeid(type)`
+  and `typeid(expr)` parsed as primary expressions in
+  `parse_primary_expression()`.
+- src/frontend/parser.h — Declared `parse_eh_statement()`.
+- src/frontend/sema.cpp — Added `type_throw()` and `type_typeid()` for M10
+  EH/RTTI type checking, dispatched from `type_expression()`. Added
+  `Try`/`Catch` cases to `walk_statement()`.
+- src/frontend/sema.h — Declared `type_throw()` and `type_typeid()`.
+- src/ir/irgen.cpp — Added `Throw`/`Typeid` to unimplemented expression kinds
+  and `Try`/`Catch` to unimplemented statement kinds (produce diagnostics,
+  not crashes).
+- tests/test_sema.cpp — Added 3 M10 EH/RTTI tests: throw expression type
+  checking, typeid of type, typeid of expression.
 - src/frontend/sema.cpp — Added `type_fold_expression()` for M10 C++17 fold
   expression type checking; dispatched from `type_expression()`.
 - src/frontend/sema.h — Declared `type_fold_expression()`.

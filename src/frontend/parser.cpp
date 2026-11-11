@@ -1050,6 +1050,8 @@ std::shared_ptr<Statement> Parser::parse_statement() {
         case TokenKind::KwBreak:
         case TokenKind::KwReturn:
             return parse_jump_statement();
+        case TokenKind::KwTry:
+            return parse_eh_statement();
         default:
             break;
     }
@@ -1247,6 +1249,50 @@ std::shared_ptr<Statement> Parser::parse_jump_statement() {
     }
     expect(TokenKind::Semicolon);
     return stmt;
+}
+
+std::shared_ptr<Statement> Parser::parse_eh_statement() {
+    // M10: parse try/catch statements.
+    // try <compound-statement> catch ( <exception-declaration> ) <compound-statement> ...
+    if (consume(TokenKind::KwTry)) {
+        auto stmt = std::make_shared<Statement>();
+        stmt->kind = StatementKind::Try;
+        stmt->location = current().location;
+
+        // The try block.
+        stmt->try_block = parse_compound_statement();
+        if (!stmt->try_block) {
+            error("expected compound statement after try");
+            return stmt;
+        }
+
+        // Catch clauses.
+        while (consume(TokenKind::KwCatch)) {
+            auto catch_stmt = std::make_shared<Statement>();
+            catch_stmt->kind = StatementKind::Catch;
+            catch_stmt->location = current().location;
+
+            expect(TokenKind::LParen);
+            // Parse the exception declaration: e.g. `int e` or `const std::exception& e`
+            auto decl = parse_declaration_block_scope();
+            if (decl) {
+                catch_stmt->catch_exception_decl = decl;
+            }
+            expect(TokenKind::RParen);
+
+            // The catch block body.
+            catch_stmt->catch_body = parse_compound_statement();
+            if (!catch_stmt->catch_body) {
+                error("expected compound statement after catch");
+                return stmt;
+            }
+
+            stmt->catch_clauses.push_back(catch_stmt);
+        }
+
+        return stmt;
+    }
+    return nullptr;
 }
 
 std::shared_ptr<Statement> Parser::parse_labeled_statement() {
@@ -1790,6 +1836,19 @@ std::shared_ptr<Expression> Parser::parse_unary_expression() {
             }
             return expr;
         }
+        case TokenKind::KwThrow: {
+            advance();
+            auto expr = std::make_shared<Expression>();
+            expr->kind = ExpressionKind::Throw;
+            expr->location = current().location;
+            if (current().kind != TokenKind::Semicolon &&
+                current().kind != TokenKind::RBrace &&
+                current().kind != TokenKind::Comma &&
+                !at_eof()) {
+                expr->throw_operand = parse_cast_expression();
+            }
+            return expr;
+        }
         default:
             return parse_postfix_expression();
     }
@@ -1962,6 +2021,34 @@ std::shared_ptr<Expression> Parser::parse_primary_expression() {
             auto expr = std::make_shared<Expression>();
             expr->kind = ExpressionKind::This;
             advance();
+            return expr;
+        }
+        case TokenKind::KwTypeid: {
+            // M10: typeid expression: typeid(type) or typeid(expression)
+            advance();
+            auto expr = std::make_shared<Expression>();
+            expr->kind = ExpressionKind::Typeid;
+            expr->location = current().location;
+            expect(TokenKind::LParen);
+            if (is_cast_start(current().kind)) {
+                // typeid(type)
+                expr->typeid_is_type = true;
+                StorageClass storage = StorageClass::None;
+                Linkage linkage = Linkage::None;
+                bool is_typedef = false, is_extern = false, is_static = false;
+                bool is_const = false, is_volatile = false, is_restrict = false;
+                bool is_inline = false, is_noreturn = false;
+                bool is_noexcept = false, is_constexpr = false, has_alignas = false;
+                expr->typeid_type = parse_declaration_specifiers(
+                    storage, linkage, is_typedef, is_extern, is_static,
+                    is_const, is_volatile, is_restrict, is_inline, is_noreturn,
+                    is_noexcept, is_constexpr, has_alignas);
+            } else {
+                // typeid(expression)
+                expr->typeid_is_type = false;
+                expr->typeid_expr = parse_expression();
+            }
+            expect(TokenKind::RParen);
             return expr;
         }
         case TokenKind::LParen: {

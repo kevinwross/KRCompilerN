@@ -204,6 +204,7 @@ enum class StatementKind : std::uint8_t {
     If, Switch, While, DoWhile, For,
     Goto, Continue, Break, Return, Declaration, Null,
     StructuredBinding,  // C++17: auto [a, b] = expr;
+    Try, Catch,         // M10: C++ exception handling (try/catch)
 };
 
 struct Statement : AstNode {
@@ -229,6 +230,14 @@ struct Statement : AstNode {
     std::vector<std::string> bound_names;  // names being bound
     std::shared_ptr<Expression> bound_initializer;  // the initializer expression
     std::shared_ptr<Type> bound_type;  // the type (or auto placeholder)
+
+    // M10: C++ exception handling (try/catch)
+    // For StatementKind::Try: the try block and its catch clauses.
+    std::shared_ptr<Statement> try_block;       // the try block body
+    std::vector<std::shared_ptr<Statement>> catch_clauses;  // catch handlers
+    // For StatementKind::Catch: the exception declaration and handler body.
+    std::shared_ptr<Declaration> catch_exception_decl;  // e.g. `int e` in `catch (int e)`
+    std::shared_ptr<Statement> catch_body;  // the catch block body
 };
 
 enum class ExpressionKind : std::uint8_t {
@@ -239,6 +248,7 @@ enum class ExpressionKind : std::uint8_t {
     New, Delete,
     Lambda, Move,
     FoldExpression,  // M10: C++17 fold expression (pack op ...)
+    Throw, Typeid,   // M10: C++ exception handling and RTTI
 };
 
 enum class UnaryOp : std::uint8_t {
@@ -333,6 +343,14 @@ struct Expression : AstNode {
     FoldOp fold_op = FoldOp::Plus;
     std::shared_ptr<Expression> fold_operand;    // the pack expression
     std::shared_ptr<Expression> fold_init;       // init for binary folds (null for unary)
+
+    // M10: C++ exception handling and RTTI
+    // For ExpressionKind::Throw: the expression being thrown.
+    std::shared_ptr<Expression> throw_operand;
+    // For ExpressionKind::Typeid: the type or expression being queried.
+    std::shared_ptr<Type> typeid_type;
+    std::shared_ptr<Expression> typeid_expr;
+    bool typeid_is_type = false;  // true if typeid(T), false if typeid(expr)
 };
 
 struct FunctionDef : AstNode {

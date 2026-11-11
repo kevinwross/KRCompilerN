@@ -3039,3 +3039,69 @@ TEST_CASE("Sema expression: fold expression with constant operand") {
     CHECK(fold->is_constant == true);
 }
 
+TEST_CASE("Sema expression: throw expression type checking") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    // Build: throw expr; where expr is an int.
+    auto operand = std::make_shared<Expression>();
+    operand->kind = ExpressionKind::IntegerLiteral;
+    operand->int_literal_value = 42;
+    operand->type = sema.int_type();
+    operand->is_constant = true;
+
+    auto throw_expr = std::make_shared<Expression>();
+    throw_expr->kind = ExpressionKind::Throw;
+    throw_expr->throw_operand = operand;
+
+    // Type-check the throw expression.
+    CHECK(sema.type_throw(*throw_expr));
+    REQUIRE(throw_expr->type != nullptr);
+    CHECK(throw_expr->type == sema.void_type());
+    CHECK(throw_expr->is_lvalue == false);
+}
+
+TEST_CASE("Sema expression: typeid of type") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    // Build: typeid(int).
+    auto typeid_type = std::make_shared<Type>();
+    typeid_type->kind = TypeKind::Int;
+    typeid_type->name = "int";
+
+    auto typeid_expr = std::make_shared<Expression>();
+    typeid_expr->kind = ExpressionKind::Typeid;
+    typeid_expr->typeid_is_type = true;
+    typeid_expr->typeid_type = typeid_type;
+
+    // Type-check the typeid expression.
+    CHECK(sema.type_typeid(*typeid_expr));
+    REQUIRE(typeid_expr->type != nullptr);
+    CHECK(typeid_expr->is_lvalue == false);
+    CHECK(typeid_expr->is_constant == true);
+}
+
+TEST_CASE("Sema expression: typeid of expression") {
+    DiagnosticEngine diagnostics;
+    Sema sema(diagnostics);
+
+    // Build: typeid(x) where x is an int variable.
+    auto operand = std::make_shared<Expression>();
+    operand->kind = ExpressionKind::IntegerLiteral;
+    operand->int_literal_value = 42;
+    operand->type = sema.int_type();
+    operand->is_constant = true;
+
+    auto typeid_expr = std::make_shared<Expression>();
+    typeid_expr->kind = ExpressionKind::Typeid;
+    typeid_expr->typeid_is_type = false;
+    typeid_expr->typeid_expr = operand;
+
+    // Type-check the typeid expression.
+    CHECK(sema.type_typeid(*typeid_expr));
+    REQUIRE(typeid_expr->type != nullptr);
+    CHECK(typeid_expr->is_lvalue == false);
+    CHECK(typeid_expr->is_constant == true);
+}
+

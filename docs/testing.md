@@ -42,8 +42,10 @@ It is a work in progress; the authoritative specification is in `plan.md`
     multiple functions, and multiple variables.
   - `tests/test_sema.cpp` — Includes 2 new M10 variadic template tests
     ("variadic type parameter pack", "mixed variadic and regular type
-    parameters") and 3 new M10 fold expression tests (unary right fold,
-    binary left fold, unary left fold AST nodes).
+    parameters"), 3 new M10 fold expression tests (unary right fold,
+    binary left fold, unary left fold AST nodes), and 3 new M10 EH/RTTI
+    tests (throw expression type checking, typeid of type, typeid of
+    expression).
   - `tests/third_party/doctest/doctest.h` — vendored doctest (the only
     vendored test dependency).
 - **Frozen:** Not yet frozen.

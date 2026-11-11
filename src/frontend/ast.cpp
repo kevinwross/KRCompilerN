@@ -218,6 +218,10 @@ void dump_expression(std::ostream& out, const std::shared_ptr<Expression>& expr,
             out << "string-concat"; break;
         case ExpressionKind::FoldExpression:
             out << "fold-expression"; break;
+        case ExpressionKind::Throw:
+            out << "throw"; break;
+        case ExpressionKind::Typeid:
+            out << "typeid"; break;
     }
     if (expr->type) {
         out << " type=";
@@ -286,6 +290,26 @@ void dump_statement(std::ostream& out, const std::shared_ptr<Statement>& stmt, i
             break;
         case StatementKind::Null:
             out << "null\n";
+            break;
+        case StatementKind::Try:
+            out << "try\n";
+            out << indent_string(depth + 1) << "block:\n";
+            dump_statement(out, stmt->try_block, depth + 2);
+            for (const auto& cc : stmt->catch_clauses) {
+                out << indent_string(depth + 1) << "catch:\n";
+                dump_statement(out, cc, depth + 2);
+            }
+            break;
+        case StatementKind::Catch:
+            out << "catch\n";
+            if (stmt->catch_exception_decl) {
+                out << indent_string(depth + 1) << "exception-decl:\n";
+                dump_declaration(out, stmt->catch_exception_decl, depth + 2);
+            }
+            if (stmt->catch_body) {
+                out << indent_string(depth + 1) << "body:\n";
+                dump_statement(out, stmt->catch_body, depth + 2);
+            }
             break;
         default:
             out << "other\n";

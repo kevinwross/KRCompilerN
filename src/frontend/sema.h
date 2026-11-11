@@ -240,6 +240,8 @@ public:
     bool type_lambda(Expression& expr);
     bool type_move(Expression& expr);
     bool type_fold_expression(Expression& expr);
+    bool type_throw(Expression& expr);
+    bool type_typeid(Expression& expr);
 
 private:
     // ----- Expression typing (internal) -----
