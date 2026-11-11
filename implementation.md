@@ -839,7 +839,8 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   ctype.h,time.h,math.h,stdio.h} — KR16 sysroot headers.
 - src/frontend/preprocessor.h — Removed unused `line_offset_` field (fixes
   Clang `-Wunused-private-field` warning-as-error).
-- All 4 working build configs clean; ctest green on both GCC configs.
+- All 4 working build configs clean; ctest green on both GCC configs
+  and both MSVC configs (debug: 907 assertions, release: 907 assertions).
 - docs/testing.md — Updated test strategy status: test_sema.cpp, test_mangle.cpp,
   test_determinism.cpp now exist in tests/; doctest vendored.
 - tests/test_target_descriptor.cpp — New target descriptor test suite: 12 test
@@ -852,7 +853,8 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   helpers, register classification (caller/callee-saved/reserved), and
   allocatable register list. Addresses the M8 Tier 0–2 test coverage
   requirement (plan.md §15.5).
-- All 4 working build configs clean; ctest green on both GCC configs.
+- All 4 working build configs clean; ctest green on both GCC configs
+  and both MSVC configs (debug: 907 assertions, release: 907 assertions).
 - 210 test cases, 920 assertions, all passing.
 - src/runtime/CMakeLists.txt — Added M9/M10 runtime integration: full KR32 `libc.c` and `kr32os/` (13 kernel/user files) built as `krc_runtime_kr32` with `-fno-builtin -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast` (KR32 source uses 32-bit pointer storage patterns incompatible with GCC builtins). KR16 `crt0.c` retained.
 - src/runtime/kr32/libc.c — KR32 C runtime: allocator, buffered stdio, printf/scanf, str*/mem*, strto*, qsort, POSIX-ish file I/O, C++ allocation hooks (3,239 lines). Ported with `uintptr_t` pointer storage, `__kr32_heap_start()`/`__kr32_heap_end()` extern declarations, and forward declarations for `feof`/`strlen`.
@@ -984,7 +986,8 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   linked against `krc_asm`, `krc_backend`, `krc_linker`, `krc_debug` in
   addition to `krc_frontend`. Added include paths for backend, asm, linker,
   and debug source directories.
-- All 4 working build configs clean; ctest green on both GCC configs.
+- All 4 working build configs clean; ctest green on both GCC configs
+  and both MSVC configs (debug: 907 assertions, release: 907 assertions).
 - docs/testing.md — Updated test strategy status: test_sema.cpp, test_mangle.cpp,
   test_determinism.cpp now exist in tests/; doctest vendored.
 - tests/test_target_descriptor.cpp — New target descriptor test suite: 12 test
@@ -997,7 +1000,8 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   helpers, register classification (caller/callee-saved/reserved), and
   allocatable register list. Addresses the M8 Tier 0–2 test coverage
   requirement (plan.md §15.5).
-- All 4 working build configs clean; ctest green on both GCC configs.
+- All 4 working build configs clean; ctest green on both GCC configs
+  and both MSVC configs (debug: 907 assertions, release: 907 assertions).
 - 210 test cases, 920 assertions, all passing.
 - src/runtime/CMakeLists.txt — Added M9/M10 runtime integration: full KR32 `libc.c` and `kr32os/` (13 kernel/user files) built as `krc_runtime_kr32` with `-fno-builtin -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast` (KR32 source uses 32-bit pointer storage patterns incompatible with GCC builtins). KR16 `crt0.c` retained.
 - src/runtime/kr32/libc.c — KR32 C runtime: allocator, buffered stdio, printf/scanf, str*/mem*, strto*, qsort, POSIX-ish file I/O, C++ allocation hooks (3,239 lines). Ported with `uintptr_t` pointer storage, `__kr32_heap_start()`/`__kr32_heap_end()` extern declarations, and forward declarations for `feof`/`strlen`.
