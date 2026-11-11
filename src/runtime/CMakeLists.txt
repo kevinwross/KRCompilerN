@@ -50,6 +50,9 @@ target_compile_options(krc_runtime_kr32 PRIVATE -fno-builtin -Wno-int-to-pointer
 
 add_library(krc_runtime_kr16
     kr16/crt0.c
+    kr16/fileio.c
 )
 
 target_include_directories(krc_runtime_kr16 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/common)
+target_include_directories(krc_runtime_kr16 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_options(krc_runtime_kr16 PRIVATE -fno-builtin -Wno-nonnull-compare)

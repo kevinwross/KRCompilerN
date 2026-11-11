@@ -827,6 +827,8 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
 - src/runtime/kr32/crt0.c — KR32 crt0: calls `main(0, NULL)`, exits via
   `krc_hal_exit`, halts on return.
 - src/runtime/kr16/crt0.c — KR16 crt0: same structure as KR32.
+- src/runtime/kr16/systemservices.h — New header: KR16 host-service ABI (sys_* service numbers, status codes, struct definitions, function declarations).
+- src/runtime/kr16/fileio.c — New file: KR16 C runtime system-service wrappers (sys_version, sys_open, sys_close, sys_read, sys_write, sys_seek, sys_stat, sys_unlink, sys_rename, sys_mkdir, sys_readdir, sys_time, sys_random, sys_fsinfo) plus stdio layer (fopen, fclose, fgetc, fputc, fputs, fread, fwrite, fprintf, fseek, feof, ferror, clearerr, remove, rename). Built as `krc_runtime_kr16` with `-fno-builtin -Wno-nonnull-compare`.
 - src/runtime/CMakeLists.txt — `krc_runtime_common` (allocator, ctype,
   errno, fileio, math, stdio, string, stdlib, time, cxa_runtime, unwinder),
   `krc_runtime_kr32`, `krc_runtime_kr16` library targets. crt0 not built
