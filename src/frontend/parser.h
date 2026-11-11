@@ -56,13 +56,20 @@ private:
     // external-declaration: function-definition | declaration
     std::shared_ptr<Declaration> parse_external_declaration();
 
+    // template-parameter: typename T | class T | type N
+    std::shared_ptr<TemplateParam> parse_template_parameter();
+
+    // namespace-declaration: namespace identifier { ... }
+    std::shared_ptr<Declaration> parse_namespace();
+
     // declaration-specifiers: (storage-class | type-specifier | type-qualifier |
     //                          function-specifier)*
     std::shared_ptr<Type> parse_declaration_specifiers(
         StorageClass& storage, Linkage& linkage,
         bool& is_typedef, bool& is_extern, bool& is_static,
         bool& is_const, bool& is_volatile, bool& is_restrict,
-        bool& is_inline, bool& is_noreturn);
+        bool& is_inline, bool& is_noreturn,
+        bool& is_noexcept, bool& is_constexpr, bool& has_alignas);
 
     // Combine pairs like "long long", "unsigned int", "signed char".
     std::shared_ptr<Type> combine_type_specifiers(TokenKind first_kind);
@@ -74,6 +81,9 @@ private:
 
     // struct-or-union-specifier: struct-or-union identifier? '{' ... '}'
     std::shared_ptr<Type> parse_struct_or_union();
+
+    // class-specifier: class identifier? '{' member-specification '}'
+    std::shared_ptr<Type> parse_class_spec();
 
     // enum-specifier: enum identifier? '{' ... '}'
     std::shared_ptr<Type> parse_enum_specifier();
@@ -118,6 +128,7 @@ private:
     std::shared_ptr<Expression> parse_unary_expression();
     std::shared_ptr<Expression> parse_postfix_expression();
     std::shared_ptr<Expression> parse_primary_expression();
+    std::shared_ptr<Expression> parse_lambda_expression();
 
     // Postfix suffixes: [] () . -> ++ --
     void parse_postfix_rest(std::shared_ptr<Expression> expr);
@@ -133,6 +144,9 @@ private:
     void parse_initializer_list(std::shared_ptr<Initializer> init);
     void parse_designation(std::shared_ptr<Initializer> init);
 
+    // Parse an expression used as an initializer (for structured bindings).
+    std::shared_ptr<Expression> parse_initializer_expression();
+
     // --- Helpers ----------------------------------------------------------
 
     bool is_type_specifier_kind(TokenKind kind) const;
@@ -142,8 +156,13 @@ private:
     bool is_function_specifier_kind(TokenKind kind) const;
     bool is_cast_start(TokenKind kind) const;
 
+    // M10: fold expression helpers
+    bool is_fold_op(TokenKind kind) const;
+    FoldOp parse_fold_op(TokenKind kind) const;
+
     Preprocessor& preprocessor_;
     DiagnosticEngine& diagnostics_;
+    std::shared_ptr<Statement> pending_structured_binding_;
 };
 
 } // namespace krc

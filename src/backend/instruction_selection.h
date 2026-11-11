@@ -26,6 +26,9 @@ private:
     IRModule& ir_module_;
     MachineModule mm_;
 
+    // Target family (derived from ir_module_.target_id).
+    bool is_kr16_ = false;
+
     // Lower a single function.
     void lower_function(IRFunction& fn);
 

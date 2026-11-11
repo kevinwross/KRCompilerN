@@ -8,7 +8,8 @@
 namespace krc {
 
 InstructionSelection::InstructionSelection(IRModule& ir_module)
-    : ir_module_(ir_module), mm_(ir_module.target_id) {}
+    : ir_module_(ir_module), mm_(ir_module.target_id),
+      is_kr16_(ir_module.target_id == "kr16") {}
 
 MachineModule InstructionSelection::run() {
     for (auto& fn : ir_module_.functions) {
@@ -81,6 +82,13 @@ static std::uint32_t vreg_for(std::unordered_map<std::string, std::uint32_t>& ma
     return next_vreg++;
 }
 
+// Target-aware opcode selection: pick KR32 or KR16 variant based on target.
+static MachineInstr::Opcode pick_kr_opcode(bool is_kr16,
+                                           MachineInstr::Opcode kr32_op,
+                                           MachineInstr::Opcode kr16_op) {
+    return is_kr16 ? kr16_op : kr32_op;
+}
+
 void InstructionSelection::lower_instruction(IRInstruction* inst,
                                               MachineBasicBlock* mbb,
                                               std::unordered_map<std::string,
@@ -122,7 +130,9 @@ void InstructionSelection::lower_instruction(IRInstruction* inst,
             break;
 
         case IROpcode::IAdd:
-            mi->opcode = MachineInstr::Opcode::Kr32Add;
+            mi->opcode = pick_kr_opcode(is_kr16_,
+                                        MachineInstr::Opcode::Kr32Add,
+                                        MachineInstr::Opcode::Kr16Add);
             if (inst->operands.size() >= 2) {
                 add_use(inst->operands[0]);
                 add_use(inst->operands[1]);
@@ -131,7 +141,9 @@ void InstructionSelection::lower_instruction(IRInstruction* inst,
             break;
 
         case IROpcode::ISub:
-            mi->opcode = MachineInstr::Opcode::Kr32Sub;
+            mi->opcode = pick_kr_opcode(is_kr16_,
+                                        MachineInstr::Opcode::Kr32Sub,
+                                        MachineInstr::Opcode::Kr16Sub);
             if (inst->operands.size() >= 2) {
                 add_use(inst->operands[0]);
                 add_use(inst->operands[1]);
@@ -140,7 +152,97 @@ void InstructionSelection::lower_instruction(IRInstruction* inst,
             break;
 
         case IROpcode::IMul:
-            mi->opcode = MachineInstr::Opcode::Kr32Mul;
+            mi->opcode = pick_kr_opcode(is_kr16_,
+                                        MachineInstr::Opcode::Kr32Mul,
+                                        MachineInstr::Opcode::Kr16Mul);
+            if (inst->operands.size() >= 2) {
+                add_use(inst->operands[0]);
+                add_use(inst->operands[1]);
+            }
+            add_def();
+            break;
+
+        case IROpcode::IDiv:
+            mi->opcode = pick_kr_opcode(is_kr16_,
+                                        MachineInstr::Opcode::Kr32Div,
+                                        MachineInstr::Opcode::Kr16Div);
+            if (inst->operands.size() >= 2) {
+                add_use(inst->operands[0]);
+                add_use(inst->operands[1]);
+            }
+            add_def();
+            break;
+
+        case IROpcode::IRem:
+            mi->opcode = pick_kr_opcode(is_kr16_,
+                                        MachineInstr::Opcode::Kr32Rem,
+                                        MachineInstr::Opcode::Kr16Rem);
+            if (inst->operands.size() >= 2) {
+                add_use(inst->operands[0]);
+                add_use(inst->operands[1]);
+            }
+            add_def();
+            break;
+
+        case IROpcode::IAnd:
+            mi->opcode = pick_kr_opcode(is_kr16_,
+                                        MachineInstr::Opcode::Kr32And,
+                                        MachineInstr::Opcode::Kr16And);
+            if (inst->operands.size() >= 2) {
+                add_use(inst->operands[0]);
+                add_use(inst->operands[1]);
+            }
+            add_def();
+            break;
+
+        case IROpcode::IOr:
+            mi->opcode = pick_kr_opcode(is_kr16_,
+                                        MachineInstr::Opcode::Kr32Or,
+                                        MachineInstr::Opcode::Kr16Or);
+            if (inst->operands.size() >= 2) {
+                add_use(inst->operands[0]);
+                add_use(inst->operands[1]);
+            }
+            add_def();
+            break;
+
+        case IROpcode::IXor:
+            mi->opcode = pick_kr_opcode(is_kr16_,
+                                        MachineInstr::Opcode::Kr32Xor,
+                                        MachineInstr::Opcode::Kr16Xor);
+            if (inst->operands.size() >= 2) {
+                add_use(inst->operands[0]);
+                add_use(inst->operands[1]);
+            }
+            add_def();
+            break;
+
+        case IROpcode::IShl:
+            mi->opcode = pick_kr_opcode(is_kr16_,
+                                        MachineInstr::Opcode::Kr32Shl,
+                                        MachineInstr::Opcode::Kr16Shl);
+            if (inst->operands.size() >= 2) {
+                add_use(inst->operands[0]);
+                add_use(inst->operands[1]);
+            }
+            add_def();
+            break;
+
+        case IROpcode::IShr:
+            mi->opcode = pick_kr_opcode(is_kr16_,
+                                        MachineInstr::Opcode::Kr32Shr,
+                                        MachineInstr::Opcode::Kr16Shr);
+            if (inst->operands.size() >= 2) {
+                add_use(inst->operands[0]);
+                add_use(inst->operands[1]);
+            }
+            add_def();
+            break;
+
+        case IROpcode::ISra:
+            mi->opcode = pick_kr_opcode(is_kr16_,
+                                        MachineInstr::Opcode::Kr32Sra,
+                                        MachineInstr::Opcode::Kr16Shr);
             if (inst->operands.size() >= 2) {
                 add_use(inst->operands[0]);
                 add_use(inst->operands[1]);
@@ -182,12 +284,16 @@ void InstructionSelection::lower_instruction(IRInstruction* inst,
             break;
 
         case IROpcode::Unreachable:
-            mi->opcode = MachineInstr::Opcode::Kr32Nop;
+            mi->opcode = pick_kr_opcode(is_kr16_,
+                                        MachineInstr::Opcode::Kr32Nop,
+                                        MachineInstr::Opcode::Kr16Nop);
             break;
 
         default:
-            // Unimplemented opcodes become NOPs for now.
-            mi->opcode = MachineInstr::Opcode::Kr32Nop;
+            // Unimplemented opcodes become target-specific NOPs for now.
+            mi->opcode = pick_kr_opcode(is_kr16_,
+                                        MachineInstr::Opcode::Kr32Nop,
+                                        MachineInstr::Opcode::Kr16Nop);
             break;
     }
 

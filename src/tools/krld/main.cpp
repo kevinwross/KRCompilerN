@@ -119,7 +119,13 @@ int main(int argc, char** argv) {
     krc::LinkerOptions link_opts;
     link_opts.target_id = opts.target;
     link_opts.abi_version = 1;
-    link_opts.pointer_width = 32;
+    if (opts.target == "kr16") {
+        link_opts.pointer_width = 16;
+    } else if (opts.target == "kr64") {
+        link_opts.pointer_width = 64;
+    } else {
+        link_opts.pointer_width = 32;
+    }
     link_opts.endianness = 0;
     link_opts.entry_symbol = opts.entry_symbol;
     link_opts.gc_sections = opts.gc_sections;

@@ -6,6 +6,7 @@
 #include "source_manager.h"
 
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -50,6 +51,9 @@ public:
     // Lex the next preprocessed token.  Returns ok=false on unrecoverable
     // error (e.g. unterminated conditional).
     LexResult next();
+
+    // Push a token back so the next read_token() returns it.
+    void push_back(const Token& tok);
 
     // Peek at the next token without consuming it.
     const Token& peek() const { return current_; }
@@ -100,8 +104,18 @@ private:
     // Read the next token, honoring any pushed-back token first.
     LexResult read_token();
 
-    // Push a token back so the next read_token() returns it.
-    void push_back(const Token& tok);
+    // Handle a predefined macro (__FILE__, __LINE__, __COUNTER__, target
+    // macros like __KR32__, __STDC_VERSION__, etc.).
+    // Returns true if the token was a predefined macro and its expansion
+    // was queued.
+    bool handle_predefined_macro(const Token& tok);
+
+    // Evaluate the condition expression after #if or #elif (supports
+    // defined(NAME) / defined NAME / __has_include(...)).
+    bool evaluate_defined_expression();
+
+    // Check whether a header file can be found via the include search path.
+    bool header_found(std::string_view header) const;
 
     // Handle a # directive that has just been recognized.  The '#' token has
     // already been consumed.  Returns true on success.
@@ -126,6 +140,11 @@ private:
 
     // Handle #pragma (mostly a no-op; #pragma once is tracked).
     void handle_pragma();
+
+    // Handle the _Pragma operator: _Pragma("string") is equivalent to
+    // #pragma string.  Reads the parenthesized string literal and processes
+    // its contents as a pragma directive.
+    bool handle_pragma_operator(const Token& pragma_tok);
 
     // Handle #line
     void handle_line();
@@ -205,13 +224,24 @@ private:
     // Queued tokens from macro expansion (front = next to return).
     std::vector<Token> queued_tokens_;
 
+    // Storage for dynamically generated token text (string literals,
+    // integer literals from __LINE__/__COUNTER__, etc.).  Tokens reference
+    // into this storage via string_view; deque keeps references stable on
+    // push_back.
+    std::deque<std::string> string_storage_;
+
     // One-token pushback for lookahead (function-like macro detection).
-    Token pushed_back_;
-    bool has_pushed_back_ = false;
+    std::vector<Token> pushed_back_;
 
     // Line number of the last returned token, used to detect line starts
     // for directive recognition.
     std::uint32_t last_line_ = 0;
+
+    // Predefined macro counter for __COUNTER__.
+    std::uint32_t counter_ = 0;
+
+    // The current file_id (top of the include stack), or -1 if none.
+    int current_file_id() const noexcept;
 
     // Set of file_ids already included with #pragma once.
     std::unordered_set<int> pragma_once_files_;

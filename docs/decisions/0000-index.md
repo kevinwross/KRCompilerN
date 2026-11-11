@@ -16,6 +16,7 @@ its row in `plan.md` Appendix A and adding an ADR here.
 | 0002 | Target descriptor schema v1 | proposed | D-007, §4.2 |
 | 0003 | IR core — typed SSA, memory model | proposed | D-005, D-006, §8 |
 | 0004 | IR textual dump and verifier | proposed | D-005, §8.9, §8.10 |
+| 0005 | KR16 relocation types | proposed | D-013, D-014, §11.4 |
 
 ## Process
 

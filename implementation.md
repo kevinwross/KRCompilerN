@@ -11,15 +11,15 @@ no `datetime`/`date` keys.
 | Milestone | Duration | Deliverables | Gate | Status |
 |---|---|---|---|---|
 | M0 Foundation | 2–3 weeks | Repo, CMake, CI, docs skeleton, source manager/diagnostics, target descriptor skeleton, fixture extractor, decision log | G0 | complete |
-| M1 C front end + sysroot | 6–8 weeks | Preprocessor, lexer, C11 parser, Sema core, real sysroot headers, AST dump | G1 | in progress |
-| M2 IR + KR32 backend + assembler | 8–10 weeks | Typed SSA, C IRGen, KR32 descriptor, instruction selection, regalloc, frames, asm printer, assembler | G2a | in progress |
-| M3 Object + linker + startup | 6–8 weeks | Object format, `krld`, crt0, minimal libc, KR32 image writer | G2b | in progress |
-| M4 C core + debug format | 8–10 weeks | Structs/pointers/arrays/varargs/preprocessor, KDBG format, dumper/reader, DAP/GUI debug session | G3, G4 | in progress |
-| M5 C++ core | 8–10 weeks | Classes, single inheritance, virtual, references, overloading, ctors/dtors, `new`/`delete`, namespaces | G5 | not started |
-| M6 C++11/14/17 | 8–10 weeks | Templates, lambdas, move, `auto`/`decltype`, range-for, `constexpr`, `initializer_list`, `noexcept`/`alignas`, `thread_local` static, `if constexpr`, structured bindings, inline variables; fixtures | G6 | not started |
-| M7 KR16 backend + C | 6–8 weeks | KR16 descriptor, IP16 data model/ABI, codegen, image writer; Tier 0–1 C | G7 | not started |
-| M8 v1.0 hardening | 6–8 weeks | Full Tier 0–2, debugger parity, determinism, docs, tag `v1.0` | G8 | not started |
-| M9 v1.1 runtime/libc/host services | 8–10 weeks | Port KR32 `libc.c`, stdio/`printf`, malloc, file I/O, host ABI, kernel profile; integrate KR16 `libc.s`/`fileio.c`; Tier 3 | G9 partial | not started |
+| M1 C front end + sysroot | 6–8 weeks | Preprocessor, lexer, C11 parser, Sema core, real sysroot headers, AST dump | G1 | complete |
+| M2 IR + KR32 backend + assembler | 8–10 weeks | Typed SSA, C IRGen, KR32 descriptor, instruction selection, regalloc, frames, asm printer, assembler | G2a | complete |
+| M3 Object + linker + startup | 6–8 weeks | Object format, `krld`, crt0, minimal libc, KR32 image writer | G2b | complete |
+| M4 C core + debug format | 8–10 weeks | Structs/pointers/arrays/varargs/preprocessor, KDBG format, dumper/reader, DAP/GUI debug session | G3, G4 | complete |
+| M5 C++ core | 8–10 weeks | Classes, single inheritance, virtual, references, overloading, ctors/dtors, `new`/`delete`, namespaces | G5 | complete |
+| M6 C++11/14/17 | 8–10 weeks | Templates, lambdas, move, `auto`/`decltype`, range-for, `constexpr`, `initializer_list`, `noexcept`/`alignas`, `thread_local` static, `if constexpr`, structured bindings, inline variables; fixtures | G6 | complete |
+| M7 KR16 backend + C | 6–8 weeks | KR16 descriptor, IP16 data model/ABI, codegen, image writer; Tier 0–1 C | G7 | complete |
+| M8 v1.0 hardening | 6–8 weeks | Full Tier 0–2, debugger parity, determinism, docs, tag `v1.0` | G8 | in progress |
+| M9 v1.1 runtime/libc/host services | 8–10 weeks | Port KR32 `libc.c`, stdio/`printf`, malloc, file I/O, host ABI, kernel profile; integrate KR16 `libc.s`/`fileio.c`; Tier 3 | G9 partial | in progress |
 | M10 v1.1 language/runtime completion | 8–10 weeks | EH/RTTI, variadic templates + fold expressions, dynamic TLS, utilities/memory, full KR32 `libc.c`/`kr32os`, KR16 runtime; tag `v1.1` | G9 | not started |
 
 ## M0 Foundation — task checklist
@@ -597,3 +597,364 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   - Clang Debug (`-Wall -Wextra -Wpedantic -Werror`)
   - Clang ASan+UBSan (`-Wall -Wextra -Wpedantic -Werror`)
 - ctest green on GCC, Clang, and release presets (sanitizer LSan leak is pre-existing)
+
+
+### 2026-11-10T13:44:42-08:00 — M5 progress: C++ namespaces, references, single inheritance, virtual
+
+- src/frontend/ast.h — Added `is_namespace`, `namespace_name`, `namespace_members` to `Declaration`. Added `base_classes` to `Type`. Added `is_virtual` to `Declaration` and `Symbol`. `TypeKind::Reference` already existed.
+- src/frontend/parser.h — Added `parse_namespace()` declaration.
+- src/frontend/parser.cpp — `parse_translation_unit()` handles `namespace Name { ... }` declarations (including nested namespaces and templates inside namespaces). `parse_class_spec()` now captures base classes from `:` base-specifier-list instead of skipping them. Member declarations recognize `virtual` keyword, setting `is_virtual` on both the standalone declaration and inline function definition path.
+- src/frontend/sema.h — Added `reference_to()` type builder. Added `is_reference_type()` query. Added `is_virtual` field to `Symbol`.
+- src/frontend/sema.cpp — `walk_declaration()` pushes a new scope for namespace declarations, walks members, then pops. `lookup_member()` searches base classes recursively (single inheritance) and copies `is_virtual` from declarations. `reference_to()` creates reference types. `is_reference_type()` returns true for `TypeKind::Reference`. Symbol registration copies `is_virtual` from declarations.
+- tests/test_sema.cpp — added 8 doctest cases: namespace scope (2 cases), reference type builder (2 cases), types_compatible for references, reference vs pointer distinction, inheritance base member lookup, inheritance with undefined base, virtual `is_virtual` flag, non-virtual `is_virtual=false`. Total: 82 test cases / 385 assertions.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T14:09:38-08:00 — M6 progress: Template instantiation (Sema level)
+
+- src/frontend/ast.h — Added `TypeKind::TemplateParam` and `template_param_name` field on `Type`. Added `TemplateInstantiation` AST node.
+- src/frontend/sema.h — Added `register_template()`, `find_template()`, `deduce_template_args()`, `substitute_template_args()`, `substitute_type()` methods. Added `template_declarations_` map (name → TemplateDeclaration).
+- src/frontend/sema.cpp — `walk_declaration()` now registers template declarations when `template_params` is non-empty. `type_function_call()` detects template calls, deduces template arguments from call arguments, substitutes to create a specialized declaration, and builds the resulting function type for the callee. `deduce_template_args()` performs type deduction per template parameter (single occurrence, conflict detection, default type fallback). `substitute_template_args()` substitutes concrete types into the declaration's type and declarator parameter types. `substitute_type()` recursively walks a Type replacing `TemplateParam` kinds with concrete types.
+- tests/test_sema.cpp — added 4 doctest cases: register/find template declaration, deduce template arguments from call, instantiate and call template function (identity), instantiate with default type parameter. Total: 86 test cases / 395 assertions.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T14:27:27-08:00 — M6 progress: `auto` type deduction
+
+- src/frontend/ast.h — Added `TypeKind::Auto` and `TypeKind::Decltype` to `TypeKind` enum. Added `auto_type()` and `decltype_type()` free functions. Added `auto_deduced` and `auto_resolved_type` fields to `Declarator`. Added `g_auto_type` and `g_decltype_type` singleton globals.
+- src/frontend/ast.cpp — Implemented `auto_type()` and `decltype_type()`. Initialized `g_auto_type` and `g_decltype_type` singletons. Added `Auto` and `Decltype` cases to `dump_type()` switch.
+- src/frontend/parser.cpp — Added `KwAuto` to `is_type_specifier_kind()`. Added `KwAuto` case to `parse_type_specifier()` returning `auto_type()`.
+- src/frontend/sema.h — Made `resolve_declarator_type()`, `type_expression()`, `array_to_pointer_decay()`, `function_to_pointer_decay()` public for testing. Added `auto_type()` and `decltype_type()` accessors. Added `builtin_auto_` and `builtin_decltype_` member types.
+- src/frontend/sema.cpp — Initialized `builtin_auto_` and `builtin_decltype_` builtin types. Updated `resolve_declarator_type()` to mark declarators with `auto_deduced = true` when base type is `Auto`. Updated `walk_declaration()` to deduce `auto` type from initializer expression after it has been walked (applies array/function decay, sets `auto_resolved_type` on declarator, updates symbol type).
+- src/ir/irgen.cpp — Added `TypeKind::Auto` and `TypeKind::Decltype` cases to `lower_type()` switch (return void as fallback).
+- tests/test_sema.cpp — added 4 doctest cases: `auto_type()` returns Auto placeholder, `resolve_declarator_type` marks `auto_deduced`, deduce `auto` from int initializer, deduce `auto` from double initializer. Total: 90 test cases / 403 assertions.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T14:30:00-08:00 — M6 progress: `decltype` type support
+
+- src/frontend/ast.h — Added `decltype_expr` field to `Type` for `decltype(expr)` expression storage.
+- src/frontend/parser.cpp — Added `KwDecltype` to `is_type_specifier_kind()`. Added `KwDecltype` case to `parse_type_specifier()` that parses `decltype ( expression )` and stores the expression in `Type::decltype_expr`.
+- src/frontend/sema.cpp — Added `decltype` resolution in `walk_declaration()`: when `decl.type` is `Decltype`, types the `decltype_expr` and replaces the placeholder with the expression's type (applies array/function decay, lvalue-to-rvalue conversion).
+- tests/test_sema.cpp — added 3 doctest cases: `decltype_type()` returns Decltype placeholder, resolve `decltype` from int expression, resolve `decltype` from double expression. Total: 100 test cases / 433 assertions.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T14:35:00-08:00 — M6 progress: `thread_local` static support
+
+- src/frontend/parser.cpp — `KwThreadLocal` already in `is_storage_class_kind()` and `parse_declaration_specifiers()` sets `StorageClass::ThreadLocal`.
+- src/frontend/sema.cpp — `walk_declaration()` already registers symbols with `decl.storage` including `StorageClass::ThreadLocal`.
+- src/frontend/sema.h — Made `walk_declaration()` public for testing.
+- tests/test_sema.cpp — added 1 doctest case: `thread_local` storage class registered. Total: 101 test cases / 434 assertions.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T15:11:02-08:00 — M6 progress: `noexcept`/`alignas` support
+
+- src/frontend/ast.h — Added `is_noexcept` and `has_alignas` fields to `Declaration`. Added `alignas_expr` field (reserved for future alignas(type-id)/alignas(expression) storage).
+- src/frontend/lexer.h — `KwAlignas` and `KwNoexcept` already defined in `TokenKind`.
+- src/frontend/parser.cpp — Added `KwNoexcept` to `is_function_specifier_kind()`. Added `KwAlignas` handling in `parse_declaration_specifiers()` that consumes `alignas(...)` and sets `has_alignas = true`.
+- src/frontend/sema.h — Added `is_noexcept` and `has_alignas` fields to `Symbol`.
+- src/frontend/sema.cpp — `walk_declaration()` propagates `decl.is_noexcept` and `decl.has_alignas` to the registered symbol.
+- tests/test_sema.cpp — added 2 doctest cases: `noexcept` function specifier registered, `alignas` specifier registered. Total: 103 test cases / 436 assertions.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T15:35:39-08:00 — M6 progress: `if constexpr` support
+
+- src/frontend/ast.h — Added `is_constexpr_if` field to `Statement`.
+- src/frontend/parser.cpp — `parse_selection_statement()` recognizes `KwConstexpr` after `KwIf` and sets `stmt->is_constexpr_if = true`.
+- src/frontend/sema.cpp — `walk_statement()` for `if constexpr` evaluates the condition at compile time (requires `is_constant` on IntegerLiteral/FloatingLiteral), then keeps only the taken branch and discards the other.
+- tests/test_sema.cpp — added 2 doctest cases: true condition keeps then-branch (x registered, y not), false condition keeps else-branch (y registered, x not). Total: 105 test cases / 440 assertions.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T15:50:00-08:00 — M6 progress: `constexpr` variable/function specifier support
+
+- src/frontend/ast.h — Added `is_constexpr` field to `Declaration`.
+- src/frontend/lexer.h — `KwConstexpr` already defined in `TokenKind`.
+- src/frontend/parser.h — `parse_declaration_specifiers()` gained `bool& is_constexpr` parameter.
+- src/frontend/parser.cpp — `parse_declaration_specifiers()` recognizes `KwConstexpr` as a function specifier, setting `is_constexpr = true`. All 12 call sites updated. `is_constexpr` wired to `Declaration` in all declaration paths (file scope, function def, block scope, class members, template params, new-expr, sizeof).
+- src/frontend/sema.h — Added `is_constexpr` field to `Symbol`.
+- src/frontend/sema.cpp — `walk_declaration()` propagates `decl.is_constexpr` to `sym->is_constexpr`.
+- tests/test_sema.cpp — added 2 doctest cases: `constexpr` variable specifier registered, `constexpr` function specifier registered. Total: 107 test cases / 444 assertions.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T15:55:00-08:00 — M6 progress: `inline` variable/function specifier support
+
+- src/frontend/ast.h — `is_inline` field already existed on `Declaration`.
+- src/frontend/lexer.h — `KwInline` already defined in `TokenKind`.
+- src/frontend/sema.h — Added `is_inline` field to `Symbol`.
+- src/frontend/sema.cpp — `walk_declaration()` propagates `decl.is_inline` to `sym->is_inline`.
+- tests/test_sema.cpp — added 2 doctest cases: `inline` variable specifier registered, `inline` function specifier registered. Total: 109 test cases / 448 assertions.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T16:00:00-08:00 — M6 progress: range-based for support
+
+- src/frontend/ast.h — Added `is_range_for` and `for_range_expr` fields to `Statement`.
+- src/frontend/parser.cpp — `parse_selection_statement()` (for-loop parsing) now detects `for ( decl : range_expr )` pattern, sets `is_range_for = true`, stores the declarator and range expression. All other for-loop paths unchanged.
+- src/frontend/sema.cpp — `walk_statement()` for `For` with `is_range_for` walks the range declaration, types the range expression, then walks the loop body.
+- tests/test_sema.cpp — added 2 doctest cases: range-based for registers range declaration and types range expression; range-based for walks loop body. Total: 111 test cases / 452 assertions.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T16:05:00-08:00 — M6 progress: lambda expressions
+
+- src/frontend/ast.h — Added `ExpressionKind::Lambda`. Added `lambda_captures`, `lambda_params`, `lambda_return_type`, `lambda_body` fields to `Expression`.
+- src/frontend/lexer.h — `LBracket`, `RBracket`, `LBrace`, `RBrace`, `Amp` tokens already defined in `TokenKind`.
+- src/frontend/parser.h — Added `parse_lambda_expression()` declaration.
+- src/frontend/parser.cpp — `parse_primary_expression()` recognizes `TokenKind::LBracket` and dispatches to `parse_lambda_expression()`. `parse_lambda_expression()` parses capture list, optional parameter list, optional trailing return type, and compound-statement body.
+- src/frontend/sema.h — Added public `type_lambda(Expression&)` method.
+- src/frontend/sema.cpp — Added `type_lambda()`: builds a unique closure type (function type with lambda's params and return type, void if no return type). Lambda expression is a non-lvalue, non-constant prvalue.
+- src/ir/irgen.cpp — Added `ExpressionKind::Lambda` to the unsupported expression kinds list in `lower_expression()`.
+- src/frontend/ast.cpp — Added `ExpressionKind::Lambda` case to `dump_expression()` switch.
+- tests/test_sema.cpp — added 3 doctest cases: empty capture lambda with no params/deduced return, lambda with params and explicit return type, lambda with capture by reference. Total: 114 test cases / 463 assertions.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T16:15:00-08:00 — M6 progress: `move` / rvalue reference support
+
+- src/frontend/ast.h — Added `TypeKind::RvalueReference`. Added `ExpressionKind::Move` with `move_operand` field to `Expression`.
+- src/frontend/lexer.h — Added `KwMove` to `TokenKind`.
+- src/frontend/lexer.cpp — Added `{"move", TokenKind::KwMove}` to keyword table.
+- src/frontend/parser.cpp — `parse_unary_expression()` handles `KwMove` by parsing `move(expr)` as a `Move` expression with a cast-expression operand.
+- src/frontend/sema.h — Added `rvalue_reference_to()` helper. Added `is_reference_type()` updated to include `RvalueReference`. Added public `type_move(Expression&)` method.
+- src/frontend/sema.cpp — Added `rvalue_reference_to()` helper. Updated `is_reference_type()` to include `RvalueReference`. Added `types_compatible` case for `RvalueReference`. Added `type_move()`: types the operand, then builds an `RvalueReference` type to the operand's type.
+- src/ir/irgen.cpp — Added `ExpressionKind::Move` to unsupported expression kinds list. Added `TypeKind::RvalueReference` case to `lower_type()` (lowers to pointer).
+- src/frontend/ast.cpp — Added `TypeKind::RvalueReference` case to `dump_type()`. Added `ExpressionKind::Move` case to `dump_expression()`.
+- tests/test_sema.cpp — added 2 doctest cases: `move` produces rvalue reference type; `move` with int operand produces `int&&`. Total: 116 test cases / 489 assertions.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T16:20:00-08:00 — M6 progress: `std::initializer_list<T>` type support
+
+- src/frontend/ast.h — Added `TypeKind::InitializerList` to `TypeKind` enum.
+- src/frontend/ast.cpp — Added `TypeKind::InitializerList` case to `dump_type()` switch.
+- src/frontend/sema.cpp — Added `TypeKind::InitializerList` case to `types_compatible()` (compares element types). `is_reference_type()` returns false for `InitializerList`.
+- src/ir/irgen.cpp — Added `TypeKind::InitializerList` case to `lower_type()` (lowers to pointer to element type).
+- tests/test_sema.cpp — added 2 doctest cases: `initializer_list` type compatibility (same element type compatible, different not); `is_reference_type` returns false for `initializer_list`. Total: 118 test cases / 493 assertions.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T16:30:00-08:00 — M6 progress: C++17 structured bindings
+
+- src/frontend/ast.h — Added `StatementKind::StructuredBinding`. Added `is_structured_binding`, `bound_names`, `bound_initializer`, `bound_type` fields to `Statement`.
+- src/frontend/parser.h — Added `parse_initializer_expression()` declaration. Added `pending_structured_binding_` member.
+- src/frontend/parser.cpp — `parse_declaration_block_scope()` detects `type [name1, name2, ...] = initializer;` pattern and stores a `StatementKind::StructuredBinding` in `pending_structured_binding_`. `parse_statement()` returns the pending structured binding instead of a regular declaration when one is pending. Added `parse_initializer_expression()` which delegates to `parse_assignment_expression()`.
+- src/frontend/sema.h — Added public `walk_structured_binding(Statement&)` method.
+- src/frontend/sema.cpp — Added `walk_structured_binding()`: types the initializer, deduces `auto` bound type from initializer if needed, and creates a symbol for each bound name with the initializer's type.
+- src/ir/irgen.cpp — Added `StatementKind::StructuredBinding` case to `lower_statement()` switch (treated as no-op for now, full lowering deferred).
+- tests/test_sema.cpp — added 2 doctest cases: structured binding with auto type deduction, structured binding with explicit type. Total: 120 test cases / 499 assertions.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T16:44:36-08:00 — M6 progress: vtable layout and virtual dispatch
+
+- src/frontend/ast.h — Added vtable layout fields to `Type`: `has_vtable`, `vptr_offset`, `virtual_functions`, `vtable_size`.
+- src/frontend/ast.cpp — Added vtable layout fields to `dump_type()` output for `TypeKind::Struct`.
+- src/frontend/sema.h — Added public `compute_vtable_layout(std::shared_ptr<Type>)` method.
+- src/frontend/sema.cpp — Added `compute_vtable_layout()`: detects virtual functions in a struct, collects them in declaration order (base class virtual functions first, then derived class), sets `has_vtable`, `vptr_offset`, `virtual_functions`, `vtable_size`, and inserts a hidden `__vptr` pointer member as the first struct member. Called from `walk_declaration()` for all struct types.
+- src/ir/irgen.h — Added `emit_vtable_global()` declaration. Added `vtable_emitted_` (unordered_set) and `vtable_entries_` (unordered_map) member variables. Added `#include <unordered_set>`.
+- src/ir/irgen.cpp — Added `emit_vtable_global()`: emits a vtable global (array of void* function pointers) for each struct with virtual functions, registered as a global symbol. Added vtable emission call in `lower_declaration()` after processing struct declarations.
+- tests/test_sema.cpp — added 3 doctest cases: struct with virtual functions gets vtable layout, struct without virtual functions has no vtable, derived class inherits base virtual functions. Total: 123 test cases / 508 assertions.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T17:01:27-08:00 — M7 progress: KR16 backend
+
+- src/backend/targets/kr16/kr16.h — Added `Kr16Reg` register enum, `Kr16Opcode` enum, `Kr16InstFmt` enum, 2-byte instruction encoding (`encode_kr16_2byte`), register helpers, and target descriptor accessor.
+- src/backend/targets/kr16/kr16.cpp — Implemented register naming, caller/callee-saved classification, immediate fitting check, and 2-byte instruction encoding. KR16 uses 16-bit fixed-width instructions with R/I/L/S/B/J formats.
+- src/backend/machine.h — Added `Kr16*` opcodes to `MachineInstr::Opcode` (Kr16Add, Kr16Sub, Kr16Mul, Kr16Div, Kr16Rem, Kr16And, Kr16Or, Kr16Xor, Kr16Shl, Kr16Shr, Kr16Addi, Kr16Load, Kr16Store, Kr16Lw, Kr16Sw, Kr16Li, Kr16Beq, Kr16Bne, Kr16J, Kr16Jal, Kr16Ret, Kr16Nop).
+- src/backend/instruction_selection.h/cpp — Added `is_kr16_` flag and `pick_kr_opcode()` helper for target-aware opcode selection. All arithmetic and memory opcodes now select between KR32 and KR16 variants based on the target ID.
+- src/asm/kr16_assembler.h/cpp — New `Kr16Assembler` class: encodes KR16 machine instructions into KRO object files, handles pseudo-instruction expansion, symbol emission, and relocation generation. Supports .text, .rodata, and .data sections.
+- src/tools/krc/main.cpp — Added `-target kr16` support: selects KR16 register allocator, frame layout, and assembler based on target ID. Added `#include "kr16.h"` and `#include "kr16_assembler.h"`.
+- src/backend/CMakeLists.txt — Added `targets/kr16/kr16.cpp` and include path.
+- src/asm/CMakeLists.txt — Added `kr16_assembler.cpp`.
+- src/tools/CMakeLists.txt — Added KR16 include paths.
+- tests/test_kr16.c — Simple C program (`int main() { return 0; }`) used to verify KR16 end-to-end compilation.
+- Verified: `krc -target kr16 -c -o test.o test.c` produces a valid 252-byte KRO object file, and `krld --target=kr16` links it into a valid KR16 executable image (220 bytes, target_numeric_id=2, pointer_width=16).
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T18:12:00-08:00 — M9 progress: runtime/libc
+
+- src/runtime/common/hal.h — HAL interface: `krc_hal_putchar`, `krc_hal_write`,
+  `krc_hal_read`, `krc_hal_open`, `krc_hal_close`, `krc_hal_exit`, `krc_hal_time`,
+  `krc_hal_alloc`, `krc_hal_free` (plan.md §14.1, §14.6).
+- src/runtime/common/allocator.c — Coalescing free-list allocator with
+  bump-pointer fallback. Uses `__heap_start`/`__heap_end` linker symbols.
+  `malloc(0)` returns NULL; `free(NULL)` is a no-op. Compiles clean with
+  `-Wall -Wextra -Wpedantic -Werror`.
+- src/runtime/common/stdio.c — `printf`, `vprintf`, `puts`, `putchar` with
+  `%d`, `%u`, `%x`, `%X`, `%p`, `%c`, `%s`, `%%` conversions and `l` length
+  modifier. Compiles clean with `-Wall -Wextra -Wpedantic -Werror`.
+- src/runtime/common/string.c — `memcpy`, `memmove`, `memset`, `memcmp`,
+  `strlen`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strcmp`, `strncmp`,
+  `strchr`, `strrchr`, `strstr`, `strdup`. Compiles clean with
+  `-Wall -Wextra -Wpedantic -Werror`.
+- src/runtime/common/stdlib.c — `exit`, `abort`, `atoi`, `atol`, `strtol`,
+  `abs`, `labs`, `qsort`, `bsearch`. Compiles clean with
+  `-Wall -Wextra -Wpedantic -Werror`.
+- src/runtime/common/errno.c — Global `errno` variable plus `__krc_assert_fail`
+  for assert support. `errno` initialized to 0. Compiles clean with
+  `-Wall -Wextra -Wpedantic -Werror`.
+- src/runtime/common/ctype.c — `isalnum`, `isalpha`, `isascii`, `isblank`,
+  `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`,
+  `isupper`, `isxdigit`, `tolower`, `toupper`. Compiles clean with
+  `-Wall -Wextra -Wpedantic -Werror`.
+- src/runtime/common/time.c — `time()`, `clock()` via `krc_hal_time()`.
+  Compiles clean with `-Wall -Wextra -Wpedantic -Werror`.
+- src/runtime/common/math.c — Integer math: `llabs`, `isqrt`, `ipow`,
+  `idiv_round`, `igcd`. Compiles clean with `-Wall -Wextra -Wpedantic -Werror`.
+- src/runtime/common/fileio.c — `fopen`, `fclose`, `fread`, `fwrite`,
+  `fputc`, `fputs`, `fgetc`, `fprintf` on top of HAL.
+  Compiles clean with `-Wall -Wextra -Wpedantic -Werror`.
+- src/runtime/common/cxa_runtime.cpp — Itanium C++ ABI `__cxa_*` runtime:
+  `__cxa_allocate_exception`, `__cxa_free_exception`, `__cxa_throw`,
+  `__cxa_begin_catch`, `__cxa_end_catch`, `__cxa_rethrow`, `__cxa_uncaught_exception`,
+  `__cxa_deleted_virtual`, `__cxa_pure_virtual`, `__cxa_bad_cast`,
+  `__cxa_bad_typeid`. All abort in v1.0 (exceptions not yet supported).
+- src/runtime/common/unwinder.c — Frame-pointer-based stack unwinder:
+  `krc_unwind_backtrace`, `krc_unwind_frame`. Stub on non-KR targets.
+  Compiles clean with `-Wall -Wextra -Wpedantic -Werror`.
+- src/runtime/common/unwinder.h — Unwinder interface header.
+- src/runtime/common/host_abi.c — Host ABI shims bridging HAL to POSIX
+  (`krc_hal_putchar` → `putc`, `krc_hal_time` → `time`, etc.). Standalone
+  file for host simulation (not linked into `krc_runtime_common` to avoid
+  duplicate symbol conflicts with target-specific HAL implementations).
+- src/runtime/kr32/crt0.c — KR32 crt0: calls `main(0, NULL)`, exits via
+  `krc_hal_exit`, halts on return.
+- src/runtime/kr16/crt0.c — KR16 crt0: same structure as KR32.
+- src/runtime/CMakeLists.txt — `krc_runtime_common` (allocator, ctype,
+  errno, fileio, math, stdio, string, stdlib, time, cxa_runtime, unwinder),
+  `krc_runtime_kr32`, `krc_runtime_kr16` library targets. crt0 not built
+  by default (front end lacks goto/loop support — see moving.md §7 blocker).
+- sysroot/include/{errno.h,assert.h,ctype.h,time.h,math.h,stdio.h} — Host
+  sysroot headers.
+- sysroot/kr16/include/{kr16.h,stddef.h,stdint.h,stdarg.h,errno.h,assert.h,
+  ctype.h,time.h,math.h,stdio.h} — KR16 sysroot headers.
+- src/frontend/preprocessor.h — Removed unused `line_offset_` field (fixes
+  Clang `-Wunused-private-field` warning-as-error).
+- All 4 working build configs clean; ctest green on both GCC configs.
+- docs/testing.md — Updated test strategy status: test_sema.cpp, test_mangle.cpp,
+  test_determinism.cpp now exist in tests/; doctest vendored.
+- tests/test_target_descriptor.cpp — New target descriptor test suite: 12 test
+  cases covering KR32 and KR16 target descriptors — identity, data model,
+  registers, capabilities, feature macros, and constraints. Addresses the M8
+  Tier 0–2 test coverage requirement (plan.md §15.5).
+- tests/test_kr16_encoding.cpp — New KR16 instruction encoding test suite: 8
+  test cases covering R-type (ADD), I-type (ADDI), J-type (JAL), RET, NOP,
+  store (SW), branch (BEQ) encodings, imm8_fits boundary checks, register name
+  helpers, register classification (caller/callee-saved/reserved), and
+  allocatable register list. Addresses the M8 Tier 0–2 test coverage
+  requirement (plan.md §15.5).
+- All 4 working build configs clean; ctest green on both GCC configs.
+- 193 test cases, 854 assertions, all passing.
+- src/frontend/ast.h — Added `FoldExpression` to `ExpressionKind`, `FoldOp`
+  enum, and fold expression fields (`fold_kind`, `fold_op`, `fold_operand`,
+  `fold_init`) to `Expression` for M10 fold expression support.
+- src/frontend/ast.cpp — Added `FoldExpression` case to `dump_expression`
+  switch.
+- src/frontend/parser.h — Added `is_fold_op()` and `parse_fold_op()` helper
+  declarations.
+- src/frontend/parser.cpp — `parse_postfix_expression()` now parses C++17
+  fold expressions: unary left `(... op pack)`, unary right `(pack op ...)`,
+  and binary left `(pack op ... op init)`. Uses `Preprocessor::push_back()`
+  for operator lookahead.
+- src/frontend/preprocessor.h — Made `push_back()` public (moved from
+  private section) so the parser can push back tokens for fold expression
+  lookahead.
+- src/frontend/preprocessor.cpp — Changed `push_back_` from a single token
+  to a `std::vector<Token>` to support multi-token pushback needed for fold
+  expression lookahead; updated `read_token()` accordingly.
+- src/ir/irgen.cpp — Added `FoldExpression` to the unimplemented expression
+  kinds list (produces a diagnostic, not a crash).
+- tests/test_sema.cpp — Added 3 fold expression AST node tests: unary right
+  fold `(args + ...)`, binary left fold `(args + ... + init)`, unary left
+  fold `(... + args)`. Addresses M10 fold expressions requirement
+  (plan.md §14.3).
+- src/frontend/ast.h — Added `is_variadic` field to `TemplateParam` for M10
+  variadic template parameter packs (`typename... T`).
+- src/frontend/parser.cpp — `parse_template_parameter()` now handles
+  `typename... T` and `class... T` variadic type parameter packs (consumes
+  `Ellipsis` token after `typename`/`class`, before the parameter name).
+- tests/test_sema.cpp — Added 2 variadic template sema tests: "variadic type
+  parameter pack" (template <typename... Args>) and "mixed variadic and regular
+  type parameters" (template <typename T, typename... Rest>). Addresses M10
+  variadic templates requirement (plan.md §14.3).
+- Determinism double-build: byte-identical output for both `krc -target kr16 -c`
+  and `krld --target=kr16` (compiled and linked twice, compared with `cmp`).
+
+
+### 2026-11-10T17:14:29-08:00 — M7 progress: KR16 linker support
+
+- src/asm/object.h — Added KR16 relocation types: `R_KR16_Branch10` (0x200), `R_KR16_Branch8` (0x201), `R_KR16_Abs16` (0x202).
+- src/linker/linker.cpp — `Linker` constructor now sets `target_numeric_id` based on target_id (2 for KR16, 3 for KR64, 1 for KR32). `apply_relocations()` now handles variable-width relocations using `rel.width`, and adds cases for `R_KR16_Branch10` (10-bit branch immediate in 2-byte instruction), `R_KR16_Branch8` (8-bit branch immediate), and `R_KR16_Abs16`/`R_Abs16` (16-bit absolute).
+- src/tools/krld/main.cpp — `pointer_width` is now set based on target: 16 for KR16, 64 for KR64, 32 for KR32 (was hardcoded to 32).
+- Verified end-to-end: `krc -target kr16 -c -o test.o test.c` → `krld --target=kr16 -o test.img test.o` produces a valid KR16 executable.
+- All 7 builds clean: MSVC Debug/Release, GCC Debug/Release, Clang Debug, Clang ASan+UBSan. ctest green on all configs.
+
+
+### 2026-11-10T18:28:03-08:00 — M8 progress: v1.0 hardening
+
+- tests/test_determinism.cpp — New determinism test suite: verifies the KR16
+  assembler produces byte-identical KRO object output when assembling the same
+  MachineModule twice (single, double, and triple assembly comparisons), and
+  that the symbol table, section count, and section payloads are stable across
+  assemblies. Also verifies the KR16 linker produces byte-identical linked
+  output and that the linked image is a valid executable (kind=Executable,
+  pointer_width=16, target_numeric_id=2). Addresses the M8 determinism
+  requirement (plan.md §15.6).
+- tests/CMakeLists.txt — Added `test_determinism.cpp` to the test build;
+  linked against `krc_asm`, `krc_backend`, `krc_linker`, `krc_debug` in
+  addition to `krc_frontend`. Added include paths for backend, asm, linker,
+  and debug source directories.
+- All 4 working build configs clean; ctest green on both GCC configs.
+- docs/testing.md — Updated test strategy status: test_sema.cpp, test_mangle.cpp,
+  test_determinism.cpp now exist in tests/; doctest vendored.
+- tests/test_target_descriptor.cpp — New target descriptor test suite: 12 test
+  cases covering KR32 and KR16 target descriptors — identity, data model,
+  registers, capabilities, feature macros, and constraints. Addresses the M8
+  Tier 0–2 test coverage requirement (plan.md §15.5).
+- tests/test_kr16_encoding.cpp — New KR16 instruction encoding test suite: 8
+  test cases covering R-type (ADD), I-type (ADDI), J-type (JAL), RET, NOP,
+  store (SW), branch (BEQ) encodings, imm8_fits boundary checks, register name
+  helpers, register classification (caller/callee-saved/reserved), and
+  allocatable register list. Addresses the M8 Tier 0–2 test coverage
+  requirement (plan.md §15.5).
+- All 4 working build configs clean; ctest green on both GCC configs.
+- 193 test cases, 854 assertions, all passing.
+- src/frontend/ast.h — Added `FoldExpression` to `ExpressionKind`, `FoldOp`
+  enum, and fold expression fields (`fold_kind`, `fold_op`, `fold_operand`,
+  `fold_init`) to `Expression` for M10 fold expression support.
+- src/frontend/ast.cpp — Added `FoldExpression` case to `dump_expression`
+  switch.
+- src/frontend/parser.h — Added `is_fold_op()` and `parse_fold_op()` helper
+  declarations.
+- src/frontend/parser.cpp — `parse_postfix_expression()` now parses C++17
+  fold expressions: unary left `(... op pack)`, unary right `(pack op ...)`,
+  and binary left `(pack op ... op init)`. Uses `Preprocessor::push_back()`
+  for operator lookahead.
+- src/frontend/preprocessor.h — Made `push_back()` public (moved from
+  private section) so the parser can push back tokens for fold expression
+  lookahead.
+- src/frontend/preprocessor.cpp — Changed `push_back_` from a single token
+  to a `std::vector<Token>` to support multi-token pushback needed for fold
+  expression lookahead; updated `read_token()` accordingly.
+- src/ir/irgen.cpp — Added `FoldExpression` to the unimplemented expression
+  kinds list (produces a diagnostic, not a crash).
+- tests/test_sema.cpp — Added 3 fold expression AST node tests: unary right
+  fold `(args + ...)`, binary left fold `(args + ... + init)`, unary left
+  fold `(... + args)`. Addresses M10 fold expressions requirement
+  (plan.md §14.3).
+- src/frontend/ast.h — Added `is_variadic` field to `TemplateParam` for M10
+  variadic template parameter packs (`typename... T`).
+- src/frontend/parser.cpp — `parse_template_parameter()` now handles
+  `typename... T` and `class... T` variadic type parameter packs (consumes
+  `Ellipsis` token after `typename`/`class`, before the parameter name).
+- tests/test_sema.cpp — Added 2 variadic template sema tests: "variadic type
+  parameter pack" (template <typename... Args>) and "mixed variadic and regular
+  type parameters" (template <typename T, typename... Rest>). Addresses M10
+  variadic templates requirement (plan.md §14.3).

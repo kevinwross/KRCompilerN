@@ -36,6 +36,16 @@ std::shared_ptr<IRType> IRGen::lower_type(const std::shared_ptr<Type>& ast_type)
         case TypeKind::LongDouble: return ir_f64_type();
         case TypeKind::Pointer:
             return ir_ptr_type(lower_type(ast_type->pointee));
+        case TypeKind::Reference:
+            // References lower to pointers in the IR.
+            return ir_ptr_type(lower_type(ast_type->pointee));
+        case TypeKind::RvalueReference:
+            // Rvalue references lower to pointers in the IR.
+            return ir_ptr_type(lower_type(ast_type->pointee));
+        case TypeKind::InitializerList:
+            // initializer_list<T> lowers to a pointer to the element type
+            // (as a begin/end pair abstraction).
+            return ir_ptr_type(lower_type(ast_type->pointee));
         case TypeKind::Array:
             return ir_array_type(lower_type(ast_type->element_type),
                                  ast_type->array_length);
@@ -60,6 +70,9 @@ std::shared_ptr<IRType> IRGen::lower_type(const std::shared_ptr<Type>& ast_type)
         case TypeKind::Enum:
         case TypeKind::Typedef:
         case TypeKind::Incomplete:
+        case TypeKind::TemplateParam:
+        case TypeKind::Auto:
+        case TypeKind::Decltype:
         case TypeKind::Union: {
             auto t = std::make_shared<IRType>();
             t->kind = IRTypeKind::Opaque;
@@ -130,6 +143,54 @@ bool IRGen::lower_declaration(const std::shared_ptr<Declaration>& decl) {
             // Initializer will be emitted when the function body is lowered.
         }
     }
+
+    // M6: Emit vtable global for structs with virtual functions.
+    if (decl->type && decl->type->kind == TypeKind::Struct && decl->type->has_vtable) {
+        emit_vtable_global(decl->type);
+    }
+
+    return true;
+}
+
+bool IRGen::emit_vtable_global(const std::shared_ptr<Type>& struct_type) {
+    // Build vtable name from the struct name.
+    std::string vtable_name = "__vtable_" + std::string(struct_type->name);
+
+    // Don't emit duplicate vtables.
+    if (vtable_emitted_.count(vtable_name)) {
+        return true;
+    }
+    vtable_emitted_.insert(vtable_name);
+
+    // vtable entry type = pointer to void (function pointers).
+    auto ptr_type = ir_ptr_type(ir_void_type());
+
+    // Build array type for the vtable.
+    auto vtable_arr_type = ir_array_type(ptr_type, struct_type->vtable_size);
+
+    // Create the vtable global.
+    IRGlobal global;
+    global.name = vtable_name;
+    global.type = vtable_arr_type;
+    global.linkage = IRLinkage::External;
+    global.is_constant = true;
+    module_.globals.push_back(global);
+
+    // Register the vtable as a symbol so it can be referenced.
+    global_symbols_[vtable_name] = new IRValue(vtable_arr_type, vtable_name);
+
+    // Collect the virtual function names for the vtable initializer.
+    for (std::size_t i = 0; i < struct_type->virtual_functions.size(); ++i) {
+        auto& vf = struct_type->virtual_functions[i];
+        std::string fn_name;
+        if (!vf->declarators.empty()) {
+            fn_name = vf->declarators[0]->name;
+        }
+        if (!fn_name.empty()) {
+            vtable_entries_[vtable_name].push_back(fn_name);
+        }
+    }
+
     return true;
 }
 
@@ -219,6 +280,10 @@ bool IRGen::lower_statement(const std::shared_ptr<Statement>& stmt) {
             return lower_expression_statement(stmt);
         case StatementKind::Declaration:
             return lower_declaration_statement(stmt);
+        case StatementKind::StructuredBinding:
+            // Structured bindings lower to individual variable declarations
+            // (deferred to backend/lower-level IR). For now, treat as no-op.
+            return true;
         case StatementKind::Null:
             return lower_null_statement(stmt);
         case StatementKind::Label:
@@ -380,6 +445,12 @@ IRValue* IRGen::lower_expression(const std::shared_ptr<Expression>& expr) {
         case ExpressionKind::CompoundLiteral:
         case ExpressionKind::StatementExpr:
         case ExpressionKind::StringLiteralConcat:
+        case ExpressionKind::This:
+        case ExpressionKind::New:
+        case ExpressionKind::Delete:
+        case ExpressionKind::Lambda:
+        case ExpressionKind::Move:
+        case ExpressionKind::FoldExpression:
             diagnostics_.error(
                 {0, "irgen-unimplemented"},
                 "expression kind not yet supported in IRGen",

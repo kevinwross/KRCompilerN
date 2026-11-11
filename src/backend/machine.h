@@ -90,6 +90,15 @@ struct MachineInstr {
         Kr32Beq, Kr32Bne, Kr32Blt, Kr32Bgt, Kr32Ble, Kr32Bge,
         Kr32J, Kr32Jal, Kr32Ret,
         Kr32Nop,
+        // KR16 instructions (will be encoded by the KR16 assembler)
+        Kr16Add, Kr16Sub, Kr16Mul, Kr16Div, Kr16Rem,
+        Kr16And, Kr16Or, Kr16Xor, Kr16Shl, Kr16Shr,
+        Kr16Addi,
+        Kr16Load, Kr16Store,
+        Kr16Lw, Kr16Sw, Kr16Li,
+        Kr16Beq, Kr16Bne, Kr16Blt, Kr16Bgt, Kr16Ble, Kr16Bge,
+        Kr16J, Kr16Jal, Kr16Ret,
+        Kr16Nop,
     };
 
     Opcode opcode = Opcode::Invalid;

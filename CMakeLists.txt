@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25 FATAL_ERROR)
-project(krc VERSION 0.1.0 LANGUAGES CXX)
+project(krc VERSION 0.1.0 LANGUAGES C CXX)
 
 #-----------------------------------------------------------------------------
 # Options

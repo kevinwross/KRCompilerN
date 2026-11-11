@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace krc {
@@ -46,6 +47,10 @@ private:
     // Global symbols (functions and globals) that persist across functions.
     std::unordered_map<std::string, IRValue*> global_symbols_;
 
+    // M6: vtable emission tracking.
+    std::unordered_set<std::string> vtable_emitted_;
+    std::unordered_map<std::string, std::vector<std::string>> vtable_entries_;
+
     //------------------------------------------------------------------------------
     // Type lowering
     //------------------------------------------------------------------------------
@@ -58,6 +63,7 @@ private:
 
     bool lower_declaration(const std::shared_ptr<Declaration>& decl);
     bool lower_function_def(const std::shared_ptr<FunctionDef>& fdef);
+    bool emit_vtable_global(const std::shared_ptr<Type>& struct_type);
 
     //------------------------------------------------------------------------------
     // Statement lowering

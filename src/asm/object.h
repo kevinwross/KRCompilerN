@@ -111,6 +111,10 @@ enum class RelocType : std::uint32_t {
     R_KR32_Branch11 = 0x101,
     R_KR32_Abs32 = 0x102,
     R_KR32_PCRel32 = 0x103,
+    // Target-specific: KR16 starts at 0x200.
+    R_KR16_Branch10 = 0x200,
+    R_KR16_Branch8 = 0x201,
+    R_KR16_Abs16 = 0x202,
 };
 
 //------------------------------------------------------------------------------

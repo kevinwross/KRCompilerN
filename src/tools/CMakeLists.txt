@@ -11,6 +11,7 @@ add_executable(krc
 )
 
 target_link_libraries(krc PRIVATE krc_frontend krc_ir krc_backend krc_asm krc_debug)
-target_include_directories(krc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR}/../../backend ${CMAKE_CURRENT_SOURCE_DIR}/../../backend/targets/kr32 ${CMAKE_CURRENT_SOURCE_DIR}/../../debug)
+target_include_directories(krc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR}/../../backend ${CMAKE_CURRENT_SOURCE_DIR}/../../backend/targets/kr32 ${CMAKE_CURRENT_SOURCE_DIR}/../../backend/targets/kr16 ${CMAKE_CURRENT_SOURCE_DIR}/../../debug)
 
 add_subdirectory(krld)
+add_subdirectory(krdap)

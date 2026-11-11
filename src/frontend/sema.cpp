@@ -1,4 +1,5 @@
 #include "sema.h"
+#include "mangle.h"
 
 #include <algorithm>
 #include <cmath>
@@ -15,20 +16,38 @@ std::shared_ptr<Symbol> Scope::lookup(std::string_view name) const {
     const Scope* s = this;
     while (s != nullptr) {
         auto it = s->symbols.find(std::string(name));
-        if (it != s->symbols.end()) {
-            return it->second;
+        if (it != s->symbols.end() && !it->second.empty()) {
+            // Return the most recently inserted symbol.
+            return it->second.back();
         }
         s = s->parent;
     }
     return nullptr;
 }
 
+std::vector<std::shared_ptr<Symbol>> Scope::lookup_all(
+    std::string_view name) const {
+    const Scope* s = this;
+    while (s != nullptr) {
+        auto it = s->symbols.find(std::string(name));
+        if (it != s->symbols.end() && !it->second.empty()) {
+            return it->second;
+        }
+        s = s->parent;
+    }
+    return {};
+}
+
 bool Scope::insert(std::string_view name, std::shared_ptr<Symbol> sym) {
     std::string key(name);
-    if (symbols.find(key) != symbols.end()) {
-        return false; // already declared in this scope
+    auto& vec = symbols[key];
+    // Prevent exact duplicate (same name and same type).
+    for (const auto& existing : vec) {
+        if (existing->type == sym->type) {
+            return false;
+        }
     }
-    symbols[key] = std::move(sym);
+    vec.push_back(std::move(sym));
     return true;
 }
 
@@ -59,6 +78,9 @@ Sema::Sema(DiagnosticEngine& diagnostics) : diagnostics_(diagnostics) {
     builtin_float_ = make_builtin(TypeKind::Float, "float", 4, 4);
     builtin_double_ =
         make_builtin(TypeKind::Double, "double", 8, 8);
+    builtin_auto_ = make_builtin(TypeKind::Auto, "auto", 0, 1);
+    builtin_decltype_ =
+        make_builtin(TypeKind::Decltype, "decltype", 0, 1);
 
     // Set up the file (global) scope as the first scope on the stack.
     scope_stack_.emplace_back(std::make_unique<Scope>());
@@ -85,10 +107,51 @@ std::shared_ptr<Symbol> Sema::lookup(std::string_view name) const {
     const Scope* s = scope_stack_.empty() ? nullptr : scope_stack_.back().get();
     while (s != nullptr) {
         auto it = s->symbols.find(std::string(name));
-        if (it != s->symbols.end()) {
+        if (it != s->symbols.end() && !it->second.empty()) {
+            return it->second.back();
+        }
+        s = s->parent;
+    }
+    return nullptr;
+}
+
+std::vector<std::shared_ptr<Symbol>> Sema::lookup_all(
+    std::string_view name) const {
+    const Scope* s = scope_stack_.empty() ? nullptr : scope_stack_.back().get();
+    while (s != nullptr) {
+        auto it = s->symbols.find(std::string(name));
+        if (it != s->symbols.end() && !it->second.empty()) {
             return it->second;
         }
         s = s->parent;
+    }
+    return {};
+}
+
+std::shared_ptr<Symbol> Sema::lookup_member(
+    const std::shared_ptr<Type>& class_type,
+    std::string_view name) const {
+    if (!class_type) return nullptr;
+    // Class members are stored in the Type's members vector.  Search by name.
+    for (const auto& m : class_type->members) {
+        for (const auto& d : m->declarators) {
+            if (d->name == name) {
+                auto sym = std::make_shared<Symbol>();
+                sym->name = d->name;
+                sym->type = m->type;
+                sym->storage = m->storage;
+                sym->is_static = m->is_static;
+                sym->is_virtual = m->is_virtual;
+                sym->location = d->location;
+                return sym;
+            }
+        }
+    }
+    // Single inheritance: search base classes recursively.
+    for (const auto& base : class_type->base_classes) {
+        if (auto sym = lookup_member(base, name)) {
+            return sym;
+        }
     }
     return nullptr;
 }
@@ -145,6 +208,10 @@ bool Sema::is_pointer_type(const std::shared_ptr<Type>& t) const {
     return t && t->kind == TypeKind::Pointer;
 }
 
+bool Sema::is_reference_type(const std::shared_ptr<Type>& t) const {
+    return t && (t->kind == TypeKind::Reference || t->kind == TypeKind::RvalueReference);
+}
+
 bool Sema::is_void_type(const std::shared_ptr<Type>& t) const {
     return t && t->kind == TypeKind::Void;
 }
@@ -188,6 +255,12 @@ bool Sema::types_compatible(const std::shared_ptr<Type>& a,
             return a == b;
         case TypeKind::Pointer:
             return types_compatible(a->pointee, b->pointee);
+        case TypeKind::Reference:
+            return types_compatible(a->pointee, b->pointee);
+        case TypeKind::RvalueReference:
+            return types_compatible(a->pointee, b->pointee);
+        case TypeKind::InitializerList:
+            return types_compatible(a->pointee, b->pointee);
         case TypeKind::Array: {
             if (a->array_length != b->array_length) return false;
             return types_compatible(a->element_type, b->element_type);
@@ -205,6 +278,14 @@ bool Sema::types_compatible(const std::shared_ptr<Type>& a,
         }
         case TypeKind::Typedef:
         case TypeKind::Incomplete:
+            return a == b;
+        case TypeKind::TemplateParam:
+            // Template parameters are compatible if they have the same name.
+            return a->template_param_name == b->template_param_name;
+        case TypeKind::Auto:
+        case TypeKind::Decltype:
+            // Placeholder types are compatible only if they are the same
+            // placeholder (same pointer).
             return a == b;
     }
     return false;
@@ -354,6 +435,26 @@ std::shared_ptr<Type> Sema::pointer_to(
     return t;
 }
 
+std::shared_ptr<Type> Sema::reference_to(
+    const std::shared_ptr<Type>& pointee) const {
+    auto t = std::make_shared<Type>();
+    t->kind = TypeKind::Reference;
+    t->pointee = pointee;
+    t->size = 4;   // KR32: references are 32-bit (same as pointers)
+    t->align = 4;
+    return t;
+}
+
+std::shared_ptr<Type> Sema::rvalue_reference_to(
+    const std::shared_ptr<Type>& pointee) const {
+    auto t = std::make_shared<Type>();
+    t->kind = TypeKind::RvalueReference;
+    t->pointee = pointee;
+    t->size = 4;   // KR32: rvalue references are 32-bit (same as pointers)
+    t->align = 4;
+    return t;
+}
+
 std::shared_ptr<Type> Sema::array_of(
     const std::shared_ptr<Type>& element, std::uint64_t length) const {
     auto t = std::make_shared<Type>();
@@ -421,6 +522,40 @@ bool Sema::walk_translation_unit(TranslationUnit& tu) {
 }
 
 bool Sema::walk_declaration(Declaration& decl) {
+    // C++ template declaration: register it for later instantiation.
+    if (!decl.template_params.empty()) {
+        auto tmpl = std::make_shared<TemplateDeclaration>();
+        tmpl->params = decl.template_params;
+        tmpl->declaration = std::make_shared<Declaration>(decl);
+        // Clear template_params from the copy (it's the template, not an
+        // instantiation).
+        tmpl->declaration->template_params.clear();
+        // Determine the template name from the declaration.
+        std::string tmpl_name;
+        if (!decl.declarators.empty()) {
+            tmpl_name = decl.declarators[0]->name;
+        } else if (decl.type && !decl.type->name.empty()) {
+            tmpl_name = std::string(decl.type->name);
+        }
+        if (!tmpl_name.empty()) {
+            register_template(tmpl_name, tmpl);
+        }
+        // Still walk the declaration body to type-check the template.
+    }
+
+    // C++ namespace: push a new scope, walk all members, then pop.
+    if (decl.is_namespace) {
+        push_scope();
+        for (auto& member : decl.namespace_members) {
+            if (!walk_declaration(*member)) {
+                pop_scope();
+                return false;
+            }
+        }
+        pop_scope();
+        return true;
+    }
+
     // If this declaration carries a function definition, handle it as a
     // function definition (which creates a new scope for the body).
     if (decl.function_def) {
@@ -431,6 +566,48 @@ bool Sema::walk_declaration(Declaration& decl) {
     // declarators.
     if (!resolve_declarator_type(decl)) {
         return false;
+    }
+
+    // M6: Resolve `decltype(expr)` — type the expression and replace the
+    // placeholder type with the expression's type.
+    if (decl.type && decl.type->kind == TypeKind::Decltype && decl.type->decltype_expr) {
+        if (!type_expression(*decl.type->decltype_expr)) {
+            return false;
+        }
+        auto expr_type = decl.type->decltype_expr->type;
+        if (is_array_type(expr_type)) {
+            expr_type = array_to_pointer_decay(expr_type);
+        }
+        if (is_function_type(expr_type)) {
+            expr_type = function_to_pointer_decay(expr_type);
+        }
+        lvalue_to_rvalue(*decl.type->decltype_expr);
+        decl.type = expr_type;
+    }
+
+    // M6: Compute vtable layout for structs with virtual functions.
+    if (decl.type && decl.type->kind == TypeKind::Struct) {
+        if (!compute_vtable_layout(decl.type)) {
+            return false;
+        }
+    }
+
+    // Register a named class/struct/enum type in file scope when no
+    // declarator follows (a pure type definition, e.g. `class Foo { ... };`).
+    if (decl.type && decl.declarators.empty() &&
+        (decl.type->kind == TypeKind::Struct ||
+         decl.type->kind == TypeKind::Union ||
+         decl.type->kind == TypeKind::Enum) &&
+        !decl.type->name.empty()) {
+        auto sym = std::make_shared<Symbol>();
+        sym->name = std::string(decl.type->name);
+        sym->type = decl.type;
+        sym->is_definition = true;
+        sym->location = decl.location;
+        if (!file_scope_->insert(sym->name, sym)) {
+            return fail(DiagnosticID{4003, "sema-error-redefinition"},
+                        "redefinition of '" + sym->name + "'", decl.location);
+        }
     }
 
     // If this is a typedef, register the name.
@@ -466,10 +643,16 @@ bool Sema::walk_declaration(Declaration& decl) {
             ty = array_of(ty, size);
         }
         if (d->is_function) {
+            // Use captured parameter types (C++ overloading support),
+            // falling back to int for each unnamed parameter.
             std::vector<std::shared_ptr<Type>> param_types;
-            for (const auto& pn : d->param_names) {
-                (void)pn;
-                param_types.push_back(builtin_int_);
+            if (!d->param_types.empty()) {
+                param_types = d->param_types;
+            } else {
+                for (const auto& pn : d->param_names) {
+                    (void)pn;
+                    param_types.push_back(builtin_int_);
+                }
             }
             ty = function_type(ty, param_types, d->is_variadic);
         }
@@ -484,8 +667,18 @@ bool Sema::walk_declaration(Declaration& decl) {
         sym->is_restrict = decl.is_restrict;
         sym->is_static = decl.is_static;
         sym->is_extern = decl.is_extern;
+        sym->is_virtual = decl.is_virtual;
+        sym->is_inline = decl.is_inline;
+        sym->is_noexcept = decl.is_noexcept;
+        sym->is_constexpr = decl.is_constexpr;
+        sym->has_alignas = decl.has_alignas;
         sym->is_definition = decl.function_def != nullptr;
         sym->location = d->location;
+
+        // Compute C++ mangled name for external function symbols.
+        if (d->is_function && is_cpp_ && sym->linkage == Linkage::External) {
+            sym->mangled_name = compute_mangled_name(*sym);
+        }
 
         if (!insert_symbol(d->name, sym)) {
             return fail(DiagnosticID{4003, "sema-error-redefinition"},
@@ -512,6 +705,16 @@ bool Sema::walk_declaration(Declaration& decl) {
                     return false;
                 }
                 init->expr->is_lvalue = false; // not an lvalue after init
+
+                // M6: `auto` type deduction — resolve the placeholder type
+                // from the initializer expression's type.
+                if (d->auto_deduced) {
+                    d->auto_resolved_type = init_type;
+                    // Update the symbol's type to the deduced type.
+                    sym->type = init_type;
+                    // Update the declarator's type as well.
+                    ty = init_type;
+                }
             } else {
                 if (!walk_initializer(*init)) {
                     return false;
@@ -524,6 +727,44 @@ bool Sema::walk_declaration(Declaration& decl) {
     return true;
 }
 
+bool Sema::walk_structured_binding(Statement& stmt) {
+    // Type the initializer expression.
+    if (!stmt.bound_initializer) {
+        return fail(DiagnosticID{4016, "sema-error-structured-binding"},
+                    "structured binding: missing initializer", stmt.location);
+    }
+    if (!type_expression(*stmt.bound_initializer)) {
+        return false;
+    }
+
+    auto init_type = stmt.bound_initializer->type;
+    if (!init_type) {
+        return fail(DiagnosticID{4016, "sema-error-structured-binding"},
+                    "structured binding: initializer has no type", stmt.location);
+    }
+
+    // If the bound type is `auto`, deduce it from the initializer.
+    if (stmt.bound_type && stmt.bound_type->kind == TypeKind::Auto) {
+        stmt.bound_type = init_type;
+    }
+
+    // For each bound name, create a symbol with the element type.
+    // For simplicity, each binding gets the same type as the initializer
+    // (full structured binding decomposition with tuples/arrays is deferred).
+    for (const auto& name : stmt.bound_names) {
+        auto sym = std::make_shared<Symbol>();
+        sym->name = name;
+        sym->type = init_type;
+        sym->location = stmt.location;
+        if (!insert_symbol(name, sym)) {
+            return fail(DiagnosticID{4003, "sema-error-redefinition"},
+                        "redefinition of '" + name + "'", stmt.location);
+        }
+    }
+
+    return true;
+}
+
 bool Sema::resolve_declarator_type(Declaration& decl) {
     // Start from the base type (already set by the parser in decl.type).
     std::shared_ptr<Type> base = decl.type;
@@ -531,6 +772,74 @@ bool Sema::resolve_declarator_type(Declaration& decl) {
         base = builtin_int_; // C11: missing type specifiers defaults to int
         decl.type = base;
     }
+
+    // M6: If the base type is `auto`, mark each declarator for deferred
+    // type deduction. The actual type will be resolved from the
+    // initializer expression in walk_declaration() after the initializer
+    // has been walked.
+    if (base->kind == TypeKind::Auto) {
+        for (auto& d : decl.declarators) {
+            d->auto_deduced = true;
+        }
+    }
+
+    return true;
+}
+
+bool Sema::compute_vtable_layout(std::shared_ptr<Type> struct_type) {
+    if (!struct_type || struct_type->kind != TypeKind::Struct) {
+        return true;
+    }
+
+    // Check if any member is a virtual function.
+    bool has_virtual = false;
+    for (const auto& m : struct_type->members) {
+        if (m->is_virtual) {
+            has_virtual = true;
+            break;
+        }
+    }
+    if (!has_virtual) {
+        return true;
+    }
+
+    // Collect virtual functions from base classes first (single inheritance).
+    std::vector<std::shared_ptr<Declaration>> vfuncs;
+    for (const auto& base : struct_type->base_classes) {
+        if (base && base->has_vtable) {
+            for (const auto& vf : base->virtual_functions) {
+                vfuncs.push_back(vf);
+            }
+        }
+    }
+
+    // Add this class's own virtual functions (in declaration order).
+    for (const auto& m : struct_type->members) {
+        if (m->is_virtual && !m->declarators.empty()) {
+            vfuncs.push_back(m);
+        }
+    }
+
+    // Set vtable layout on the struct type.
+    struct_type->has_vtable = true;
+    struct_type->vptr_offset = 0;  // vptr is always the first member
+    struct_type->virtual_functions = vfuncs;
+    struct_type->vtable_size = static_cast<std::uint32_t>(vfuncs.size());
+
+    // Add a hidden vptr member as the first member of the struct.
+    auto vptr_decl = std::make_shared<Declaration>();
+    vptr_decl->type = builtin_void_;   // pointee type; declarator makes it a pointer
+    vptr_decl->storage = StorageClass::None;
+    vptr_decl->is_static = false;
+    vptr_decl->access = AccessSpecifier::Public;
+
+    auto vptr_dec = std::make_shared<Declarator>();
+    vptr_dec->name = "__vptr";
+    vptr_dec->is_pointer = true;
+    vptr_decl->declarators.push_back(vptr_dec);
+
+    struct_type->members.insert(struct_type->members.begin(), vptr_decl);
+
     return true;
 }
 
@@ -547,10 +856,16 @@ bool Sema::check_function_definition(FunctionDef& fdef) {
         // Register the function name in the file scope (parent of the
         // function body scope) so it can be referenced by other functions.
         if (d->is_function) {
+            // Use captured parameter types (C++ overloading support),
+            // falling back to int for each unnamed parameter.
             std::vector<std::shared_ptr<Type>> param_types;
-            for (const auto& pn : d->param_names) {
-                (void)pn;
-                param_types.push_back(builtin_int_);
+            if (!d->param_types.empty()) {
+                param_types = d->param_types;
+            } else {
+                for (const auto& pn : d->param_names) {
+                    (void)pn;
+                    param_types.push_back(builtin_int_);
+                }
             }
             auto func_type = function_type(decl.type, param_types, d->is_variadic);
 
@@ -561,6 +876,11 @@ bool Sema::check_function_definition(FunctionDef& fdef) {
             sym->linkage = decl.linkage;
             sym->is_definition = true;
             sym->location = d->location;
+
+            // Compute C++ mangled name for external function symbols.
+            if (is_cpp_ && sym->linkage == Linkage::External) {
+                sym->mangled_name = compute_mangled_name(*sym);
+            }
 
             // Insert into file scope (scope_stack_[0]).
             if (!file_scope_->insert(d->name, sym)) {
@@ -619,6 +939,8 @@ bool Sema::walk_statement(Statement& stmt) {
                 return walk_declaration(*stmt.declaration);
             }
             return true;
+        case StatementKind::StructuredBinding:
+            return walk_structured_binding(stmt);
         case StatementKind::Expression:
             if (stmt.expression) {
                 return type_expression(*stmt.expression);
@@ -636,11 +958,37 @@ bool Sema::walk_statement(Statement& stmt) {
                 }
                 lvalue_to_rvalue(*stmt.condition);
             }
-            if (stmt.then_branch) {
-                if (!walk_statement(*stmt.then_branch)) return false;
-            }
-            if (stmt.else_branch) {
-                if (!walk_statement(*stmt.else_branch)) return false;
+            // M6: if constexpr — evaluate the condition at compile time and
+            // discard the unevaluated branch.
+            if (stmt.is_constexpr_if) {
+                bool cond_true = false;
+                if (stmt.condition && stmt.condition->is_constant) {
+                    if (stmt.condition->kind == ExpressionKind::IntegerLiteral) {
+                        cond_true = stmt.condition->int_literal_value != 0;
+                    } else if (stmt.condition->kind == ExpressionKind::FloatingLiteral) {
+                        cond_true = stmt.condition->float_literal_value != 0.0;
+                    }
+                }
+                if (cond_true) {
+                    // Keep then-branch, discard else-branch.
+                    if (stmt.then_branch) {
+                        if (!walk_statement(*stmt.then_branch)) return false;
+                    }
+                    stmt.else_branch = nullptr;
+                } else {
+                    // Keep else-branch, discard then-branch.
+                    if (stmt.else_branch) {
+                        if (!walk_statement(*stmt.else_branch)) return false;
+                    }
+                    stmt.then_branch = nullptr;
+                }
+            } else {
+                if (stmt.then_branch) {
+                    if (!walk_statement(*stmt.then_branch)) return false;
+                }
+                if (stmt.else_branch) {
+                    if (!walk_statement(*stmt.else_branch)) return false;
+                }
             }
             return true;
         }
@@ -668,6 +1016,31 @@ bool Sema::walk_statement(Statement& stmt) {
         }
         case StatementKind::For: {
             push_scope();
+            if (stmt.is_range_for) {
+                // Range-based for: for ( decl : range_expr ) body
+                if (stmt.declaration) {
+                    if (!walk_declaration(*stmt.declaration)) {
+                        pop_scope();
+                        return false;
+                    }
+                }
+                if (stmt.for_range_expr) {
+                    if (!type_expression(*stmt.for_range_expr)) {
+                        pop_scope();
+                        return false;
+                    }
+                    // Range expression should have array or class type (begin/end).
+                    // For now, accept any type; backend handles validation.
+                }
+                if (stmt.loop_body) {
+                    if (!walk_statement(*stmt.loop_body)) {
+                        pop_scope();
+                        return false;
+                    }
+                }
+                pop_scope();
+                return true;
+            }
             if (stmt.for_init) {
                 if (stmt.for_init->kind == StatementKind::Declaration) {
                     if (stmt.for_init->declaration) {
@@ -743,6 +1116,12 @@ bool Sema::type_expression(Expression& expr) {
     switch (expr.kind) {
         case ExpressionKind::Identifier:
             return type_identifier(expr);
+        case ExpressionKind::This:
+            return type_this(expr);
+        case ExpressionKind::New:
+            return type_new(expr);
+        case ExpressionKind::Delete:
+            return type_delete(expr);
         case ExpressionKind::IntegerLiteral:
             return type_integer_literal(expr);
         case ExpressionKind::FloatingLiteral:
@@ -772,6 +1151,10 @@ bool Sema::type_expression(Expression& expr) {
             return type_array_subscript(expr);
         case ExpressionKind::CompoundLiteral:
             return type_compound_literal(expr);
+        case ExpressionKind::Lambda:
+            return type_lambda(expr);
+        case ExpressionKind::Move:
+            return type_move(expr);
         default:
             // Unknown expression kind — untyped.
             return true;
@@ -787,6 +1170,115 @@ bool Sema::type_identifier(Expression& expr) {
     }
     expr.type = sym->type;
     expr.is_lvalue = true; // identifiers refer to objects (lvalues)
+    return true;
+}
+
+bool Sema::type_this(Expression& expr) {
+    // `this` is only valid inside a non-static member function.
+    if (!current_class_type_) {
+        return fail(DiagnosticID{4012, "sema-error-this"},
+                    "'this' is only valid inside a non-static member function",
+                    expr.location);
+    }
+
+    // `this` has type "pointer to the class type".
+    expr.type = pointer_to(current_class_type_);
+    expr.is_lvalue = false; // `this` is a prvalue
+    expr.is_constant = true;
+    return true;
+}
+
+bool Sema::type_new(Expression& expr) {
+    // `new` requires a complete object type.
+    if (!expr.new_type) {
+        return fail(DiagnosticID{4013, "sema-error-new"},
+                    "new: missing allocated type", expr.location);
+    }
+    if (expr.new_type->kind == TypeKind::Void ||
+        expr.new_type->kind == TypeKind::Function ||
+        expr.new_type->kind == TypeKind::Incomplete) {
+        return fail(DiagnosticID{4013, "sema-error-new"},
+                    "new: cannot allocate type '" +
+                        std::string(expr.new_type->name) + "'", expr.location);
+    }
+
+    // For `new[]`, the array size (if present) must be integral.
+    if (expr.new_alloc_expr) {
+        if (!type_expression(*expr.new_alloc_expr)) return false;
+        if (!is_integer_type(expr.new_alloc_expr->type)) {
+            return fail(DiagnosticID{4013, "sema-error-new"},
+                "new[]: array size must have integral type",
+                expr.new_alloc_expr->location);
+        }
+        lvalue_to_rvalue(*expr.new_alloc_expr);
+    }
+
+    // Result type is pointer to the allocated type.
+    expr.type = pointer_to(expr.new_type);
+    expr.is_lvalue = false; // `new` is a prvalue
+    expr.is_constant = false;
+    return true;
+}
+
+bool Sema::type_delete(Expression& expr) {
+    // `delete` requires a pointer operand.
+    if (!expr.delete_operand) {
+        return fail(DiagnosticID{4014, "sema-error-delete"},
+                    "delete: missing operand", expr.location);
+    }
+    if (!type_expression(*expr.delete_operand)) return false;
+
+    if (!is_pointer_type(expr.delete_operand->type)) {
+        return fail(DiagnosticID{4014, "sema-error-delete"},
+            "delete: operand must be a pointer type",
+            expr.delete_operand->location);
+    }
+
+    lvalue_to_rvalue(*expr.delete_operand);
+
+    // Result type is void.
+    expr.type = builtin_void_;
+    expr.is_lvalue = false;
+    expr.is_constant = false;
+    return true;
+}
+
+bool Sema::type_lambda(Expression& expr) {
+    // A lambda expression is a prvalue of a unique closure type.
+    // For now, we represent the closure type as a function type built from
+    // the lambda's parameters and return type (or void if no return type).
+    std::shared_ptr<Type> return_type = expr.lambda_return_type;
+    if (!return_type) {
+        return_type = builtin_void_;
+    }
+    std::vector<std::shared_ptr<Type>> param_types;
+    for (auto& param : expr.lambda_params) {
+        param_types.push_back(param->type);
+    }
+    // Build a unique closure type (function type with the lambda's signature).
+    auto closure_type = std::make_shared<Type>();
+    closure_type->kind = TypeKind::Function;
+    closure_type->return_type = return_type;
+    closure_type->param_types = param_types;
+    expr.type = closure_type;
+    expr.is_lvalue = false;
+    expr.is_constant = false;
+    return true;
+}
+
+bool Sema::type_move(Expression& expr) {
+    // `move(expr)` casts its operand to an rvalue reference type.
+    if (!expr.move_operand) {
+        return fail(DiagnosticID{4015, "sema-error-move"},
+                    "move: missing operand", expr.location);
+    }
+    if (!type_expression(*expr.move_operand)) {
+        return false;
+    }
+    // Result type is rvalue reference to the operand's type.
+    expr.type = rvalue_reference_to(expr.move_operand->type);
+    expr.is_lvalue = false; // rvalue reference is a prvalue
+    expr.is_constant = false;
     return true;
 }
 
@@ -1138,30 +1630,219 @@ bool Sema::type_sizeof(Expression& expr) {
     return true;
 }
 
-bool Sema::type_function_call(Expression& expr) {
-    if (!type_expression(*expr.callee)) return false;
+// Score how well an argument type matches a parameter type for overload
+// resolution. Returns 0 (exact match), 1 (promotion), 2 (conversion),
+// or -1 (no match).
+int Sema::arg_match_score(const std::shared_ptr<Type>& param_type,
+                          const std::shared_ptr<Type>& arg_type) const {
+    if (!param_type || !arg_type) return -1;
+    if (types_compatible(param_type, arg_type)) return 0;
+    // Integer promotion: narrow integer to int/long
+    if (is_integer_type(arg_type)) {
+        if (param_type == builtin_int_ || param_type == builtin_long_) return 1;
+    }
+    // Float promotion: float to double
+    if (arg_type == builtin_float_ && param_type == builtin_double_) return 1;
+    // Arithmetic conversion
+    if (is_arithmetic_type(arg_type) && is_arithmetic_type(param_type)) return 2;
+    return -1;
+}
 
-    auto callee_type = expr.callee->type;
-    if (is_function_type(callee_type)) {
+// Resolve overload: given candidate symbols and argument expressions,
+// return the index of the best match, or -1 if no match.
+int Sema::resolve_overload(
+    const std::vector<std::shared_ptr<Symbol>>& candidates,
+    const std::vector<std::shared_ptr<Expression>>& args) const {
+    int best_idx = -1;
+    int best_score = std::numeric_limits<int>::max();
+    for (std::size_t i = 0; i < candidates.size(); ++i) {
+        auto& sym = candidates[i];
+        if (!sym->type || !is_function_type(sym->type)) continue;
+        auto& func_type = sym->type;
+        if (func_type->param_types.size() != args.size()) continue;
+        int total = 0;
+        bool ok = true;
+        for (std::size_t j = 0; j < args.size(); ++j) {
+            auto arg_type = args[j]->type;
+            int score = arg_match_score(func_type->param_types[j], arg_type);
+            if (score < 0) { ok = false; break; }
+            total += score;
+        }
+        if (ok && total < best_score) {
+            best_score = total;
+            best_idx = static_cast<int>(i);
+        }
+    }
+    return best_idx;
+}
+
+std::string Sema::compute_mangled_name(const Symbol& sym) const {
+    // Only mangle C++ external function symbols.
+    if (!is_cpp_ || sym.linkage != Linkage::External) {
+        return {};
+    }
+    if (!sym.type || !is_function_type(sym.type)) {
+        return {};
+    }
+
+    // Build the scope from the current class type, if any.
+    std::vector<std::string> scope;
+    if (current_class_type_ && !current_class_type_->name.empty()) {
+        scope.push_back(std::string(current_class_type_->name));
+    }
+
+    // Detect constructors/destructors by name matching the class.
+    bool is_constructor = false;
+    bool is_destructor = false;
+    if (current_class_type_ && !current_class_type_->name.empty()) {
+        std::string class_name(current_class_type_->name);
+        if (sym.name == class_name) {
+            is_constructor = true;
+        } else if (sym.name.size() > class_name.size() + 1 &&
+                   sym.name[0] == '~' &&
+                   sym.name.substr(1) == class_name) {
+            is_destructor = true;
+        }
+    }
+
+    return Mangler::mangle_function(scope, sym.name,
+                                    sym.type->param_types,
+                                    sym.type->return_type,
+                                    is_constructor, is_destructor);
+}
+
+bool Sema::type_function_call(Expression& expr) {
+    // If callee is an identifier, check if it's a template function that
+    // needs instantiation.
+    bool is_template_call = false;
+    if (expr.callee && expr.callee->kind == ExpressionKind::Identifier) {
+        auto candidates = lookup_all(expr.callee->identifier_name);
+        std::vector<std::shared_ptr<Symbol>> func_candidates;
+        for (auto& c : candidates) {
+            if (c->type && is_function_type(c->type)) {
+                func_candidates.push_back(c);
+            }
+        }
+
+        // Check if this is a template function (has a registered template
+        // declaration with matching name).
+        if (!func_candidates.empty()) {
+            auto tmpl = find_template(expr.callee->identifier_name);
+            if (tmpl && !tmpl->params.empty()) {
+                is_template_call = true;
+                // Type all args first so we can deduce template arguments.
+                for (auto& arg : expr.call_args) {
+                    if (!type_expression(*arg)) return false;
+                    lvalue_to_rvalue(*arg);
+                }
+
+                // Deduce template arguments from call arguments.
+                std::vector<std::shared_ptr<Type>> deduced_args;
+                if (!deduce_template_args(
+                        tmpl->params, expr.call_args,
+                        func_candidates[0]->type->param_types,
+                        deduced_args)) {
+                    return fail(
+                        DiagnosticID{4010, "sema-error-template"},
+                        "could not deduce template arguments for call to '" +
+                            expr.callee->identifier_name + "'",
+                        expr.location);
+                }
+
+                // Substitute to create a specialized declaration.
+                auto specialized = substitute_template_args(tmpl, deduced_args);
+                if (!specialized || !specialized->type) {
+                    return fail(
+                        DiagnosticID{4011, "sema-error-template"},
+                        "failed to instantiate template '" +
+                            expr.callee->identifier_name + "'",
+                        expr.location);
+                }
+
+                // Use the specialized type for the callee.
+                // Build a function type from the specialized declarator's
+                // return type and parameter types.
+                auto func_type = std::make_shared<Type>();
+                func_type->kind = TypeKind::Function;
+                func_type->return_type = specialized->type;
+                if (!specialized->declarators.empty()) {
+                    func_type->param_types =
+                        specialized->declarators[0]->param_types;
+                }
+                expr.callee->type = func_type;
+            }
+        }
+
+        if (func_candidates.size() > 1 && !is_template_call) {
+            // Type all args first so we can compare against parameter types.
+            for (auto& arg : expr.call_args) {
+                if (!type_expression(*arg)) return false;
+                lvalue_to_rvalue(*arg);
+            }
+            int best = resolve_overload(func_candidates, expr.call_args);
+            if (best < 0) {
+                return fail(DiagnosticID{4008, "sema-error-call"},
+                            "no matching function for call to '" +
+                                expr.callee->identifier_name + "'",
+                            expr.location);
+            }
+            expr.callee->type = func_candidates[best]->type;
+        } else if (func_candidates.size() == 1 && !is_template_call) {
+            // Single candidate: type the callee to get its function type.
+            if (!type_expression(*expr.callee)) return false;
+        }
+    }
+
+    if (expr.callee && !is_template_call && !expr.callee->type) {
+        if (!type_expression(*expr.callee)) return false;
+    }
+
+    auto callee_type = expr.callee ? expr.callee->type : nullptr;
+    if (callee_type && is_function_type(callee_type)) {
+        // Validate argument count against parameter count.
+        if (callee_type->param_types.size() != expr.call_args.size()) {
+            return fail(DiagnosticID{4008, "sema-error-call"},
+                "wrong number of arguments in call to '" +
+                    (expr.callee ? expr.callee->identifier_name : "") + "'",
+                expr.location);
+        }
         // Function designator decays to pointer-to-function.
         lvalue_to_rvalue(*expr.callee);
-    } else if (is_pointer_type(callee_type) &&
+    } else if (callee_type && is_pointer_type(callee_type) &&
                is_function_type(callee_type->pointee)) {
+        if (callee_type->pointee->param_types.size() !=
+            expr.call_args.size()) {
+            return fail(DiagnosticID{4008, "sema-error-call"},
+                "wrong number of arguments in call to '" +
+                    (expr.callee ? expr.callee->identifier_name : "") + "'",
+                expr.location);
+        }
         lvalue_to_rvalue(*expr.callee);
     } else {
         return fail(DiagnosticID{4008, "sema-error-call"},
                     "callee is not a function", expr.location);
     }
 
-    // Check argument types against parameter types (simplified: no
-    // prototyped checking in this stage; just type each argument).
-    for (auto& arg : expr.call_args) {
-        if (!type_expression(*arg)) return false;
-        lvalue_to_rvalue(*arg);
+    // Check argument types against parameter types.
+    if (callee_type && is_function_type(callee_type)) {
+        for (std::size_t i = 0; i < expr.call_args.size(); ++i) {
+            if (i < callee_type->param_types.size()) {
+                if (!types_compatible(callee_type->param_types[i],
+                                      expr.call_args[i]->type)) {
+                    return fail(
+                        DiagnosticID{4008, "sema-error-call"},
+                        "argument " + std::to_string(i + 1) +
+                            " type mismatch in call to '" +
+                            (expr.callee ? expr.callee->identifier_name : "") +
+                            "'", expr.location);
+                }
+            }
+        }
     }
 
-    expr.type = callee_type->return_type ? callee_type->return_type
-                                         : builtin_void_;
+    expr.type = callee_type && callee_type->return_type
+                    ? callee_type->return_type
+                    : builtin_void_;
     expr.is_lvalue = false;
     return true;
 }
@@ -1179,21 +1860,35 @@ bool Sema::type_member_access(Expression& expr) {
 
     if (is_pointer_type(base_type)) {
         // ptr->member: the pointee should be a struct/union.
-        if (base_type->pointee && base_type->pointee->kind == TypeKind::Struct) {
-            // Member lookup — simplified: we just mark the type as the
-            // member's type (unknown without full struct layout).
-            expr.type = base_type->pointee; // placeholder
-            expr.is_lvalue = true;
+        if (base_type->pointee &&
+            (base_type->pointee->kind == TypeKind::Struct ||
+             base_type->pointee->kind == TypeKind::Union)) {
+            auto member = lookup_member(base_type->pointee, expr.member_name);
+            if (!member) {
+                return fail(DiagnosticID{4009, "sema-error-member"},
+                            "no member '" + expr.member_name + "' in class",
+                            expr.location);
+            }
+            expr.type = member->type;
+            expr.is_lvalue = !member->is_static;
             return true;
         }
         return fail(DiagnosticID{4009, "sema-error-member"},
                     "member access on non-struct pointer", expr.location);
     }
 
-    if (base_type && base_type->kind == TypeKind::Struct) {
+    if (base_type &&
+        (base_type->kind == TypeKind::Struct ||
+         base_type->kind == TypeKind::Union)) {
         // base.member
-        expr.type = base_type; // placeholder
-        expr.is_lvalue = expr.member_base->is_lvalue;
+        auto member = lookup_member(base_type, expr.member_name);
+        if (!member) {
+            return fail(DiagnosticID{4009, "sema-error-member"},
+                        "no member '" + expr.member_name + "' in class",
+                        expr.location);
+        }
+        expr.type = member->type;
+        expr.is_lvalue = expr.member_base->is_lvalue && !member->is_static;
         return true;
     }
 
@@ -1264,6 +1959,154 @@ bool Sema::walk_initializer(Initializer& init) {
 
 std::shared_ptr<Type> Sema::builtin_ulong_type() const {
     return builtin_long_; // on KR32, size_t is unsigned long (32-bit)
+}
+
+// =====================================================================
+// Template instantiation (M6)
+// =====================================================================
+
+void Sema::register_template(
+    std::string_view name,
+    std::shared_ptr<TemplateDeclaration> tmpl) {
+    template_declarations_[std::string(name)] = std::move(tmpl);
+}
+
+std::shared_ptr<TemplateDeclaration> Sema::find_template(
+    std::string_view name) const {
+    auto it = template_declarations_.find(std::string(name));
+    if (it == template_declarations_.end()) {
+        return nullptr;
+    }
+    return it->second;
+}
+
+bool Sema::deduce_template_args(
+    const std::vector<std::shared_ptr<TemplateParam>>& params,
+    const std::vector<std::shared_ptr<Expression>>& call_args,
+    const std::vector<std::shared_ptr<Type>>& param_types,
+    std::vector<std::shared_ptr<Type>>& deduced_args) const {
+    deduced_args.assign(params.size(), nullptr);
+
+    // Map template parameter name → deduced type.
+    std::unordered_map<std::string, std::shared_ptr<Type>> deduced;
+
+    for (std::size_t i = 0; i < param_types.size() && i < call_args.size();
+         ++i) {
+        auto param_type = param_types[i];
+        auto arg_type = call_args[i]->type;
+        if (!arg_type) {
+            // Argument not yet typed; can't deduce.
+            return false;
+        }
+
+        if (param_type && param_type->kind == TypeKind::TemplateParam) {
+            // Parameter type is a template parameter: deduce it from the
+            // argument type.
+            auto param_name = param_type->template_param_name;
+            auto it = deduced.find(param_name);
+            if (it == deduced.end()) {
+                // First occurrence: deduce the type.
+                deduced[param_name] = arg_type;
+            } else if (!types_compatible(it->second, arg_type)) {
+                // Conflicting deductions for the same parameter.
+                return false;
+            }
+        } else {
+            // Non-template-parameter type: check compatibility.
+            if (!types_compatible(param_type, arg_type)) {
+                return false;
+            }
+        }
+    }
+
+    // Fill in deduced args in parameter order. Undeduced parameters get
+    // their default type (if any).
+    for (std::size_t i = 0; i < params.size(); ++i) {
+        auto it = deduced.find(params[i]->name);
+        if (it != deduced.end()) {
+            deduced_args[i] = it->second;
+        } else if (params[i]->default_type) {
+            deduced_args[i] = params[i]->default_type;
+        } else {
+            // No deduction and no default: can't instantiate.
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::shared_ptr<Declaration> Sema::substitute_template_args(
+    const std::shared_ptr<TemplateDeclaration>& tmpl,
+    const std::vector<std::shared_ptr<Type>>& template_args) const {
+    auto decl = std::make_shared<Declaration>();
+    *decl = *tmpl->declaration;  // Copy the base declaration
+
+    // Clear template_params from the specialization (it's now concrete).
+    decl->template_params.clear();
+
+    // Build a substitution map: template parameter name → concrete type.
+    std::unordered_map<std::string, std::shared_ptr<Type>> subst;
+    for (std::size_t i = 0; i < tmpl->params.size() && i < template_args.size();
+         ++i) {
+        subst[tmpl->params[i]->name] = template_args[i];
+    }
+
+    // Substitute in the declaration's type.
+    if (decl->type) {
+        decl->type = substitute_type(decl->type, subst);
+    }
+
+    // Substitute in each declarator.
+    for (auto& d : decl->declarators) {
+        // Substitute in parameter types for function declarators.
+        for (auto& pt : d->param_types) {
+            pt = substitute_type(pt, subst);
+        }
+    }
+
+    return decl;
+}
+
+std::shared_ptr<Type> Sema::substitute_type(
+    const std::shared_ptr<Type>& ty,
+    const std::unordered_map<std::string, std::shared_ptr<Type>>& subst) const {
+    if (!ty) return nullptr;
+
+    if (ty->kind == TypeKind::TemplateParam) {
+        auto it = subst.find(ty->template_param_name);
+        if (it != subst.end()) {
+            return it->second;
+        }
+        // No substitution available: return as-is.
+        return ty;
+    }
+
+    auto result = std::make_shared<Type>();
+    *result = *ty;
+
+    if (result->pointee) {
+        result->pointee = substitute_type(result->pointee, subst);
+    }
+    if (result->element_type) {
+        result->element_type = substitute_type(result->element_type, subst);
+    }
+    if (result->return_type) {
+        result->return_type = substitute_type(result->return_type, subst);
+    }
+    for (auto& pt : result->param_types) {
+        pt = substitute_type(pt, subst);
+    }
+    for (auto& m : result->members) {
+        if (m->type) {
+            m->type = substitute_type(m->type, subst);
+        }
+    }
+    for (auto& bc : result->base_classes) {
+        bc = substitute_type(bc, subst);
+    }
+
+    return result;
 }
 
 // =====================================================================

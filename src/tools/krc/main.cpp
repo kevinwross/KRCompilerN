@@ -30,6 +30,8 @@
 #include "ir.h"
 #include "irgen.h"
 #include "kdbg.h"
+#include "kr16.h"
+#include "kr16_assembler.h"
 #include "kr32.h"
 #include "lexer.h"
 #include "machine.h"
@@ -310,6 +312,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // With -fsyntax-only, stop after semantic analysis: no IR lowering,
+    // no backend, no object emission.
+    if (opts.fsyntax_only) {
+        return 0;
+    }
+
     // Lower to IR.
     krc::IRModule module(opts.target);
     krc::IRGen irgen(module, diagnostics);
@@ -325,14 +333,26 @@ int main(int argc, char** argv) {
     krc::InstructionSelection isel(module);
     krc::MachineModule mm = isel.run();
 
-    krc::RegisterAllocator ra(krc::kr32_allocatable_gprs());
-    for (auto& mfn : mm.functions) {
-        ra.run(*mfn);
-    }
+    if (opts.target == "kr16") {
+        krc::RegisterAllocator ra(krc::kr16_allocatable_gprs());
+        for (auto& mfn : mm.functions) {
+            ra.run(*mfn);
+        }
 
-    krc::FrameLayout frame_layout(krc::kr32_target_descriptor());
-    for (auto& mfn : mm.functions) {
-        frame_layout.run(*mfn);
+        krc::FrameLayout frame_layout(krc::kr16_target_descriptor());
+        for (auto& mfn : mm.functions) {
+            frame_layout.run(*mfn);
+        }
+    } else {
+        krc::RegisterAllocator ra(krc::kr32_allocatable_gprs());
+        for (auto& mfn : mm.functions) {
+            ra.run(*mfn);
+        }
+
+        krc::FrameLayout frame_layout(krc::kr32_target_descriptor());
+        for (auto& mfn : mm.functions) {
+            frame_layout.run(*mfn);
+        }
     }
 
     // Collect backend debug info (function ranges, frame records, variable
@@ -380,14 +400,25 @@ int main(int argc, char** argv) {
 
     // Emit object file if requested.
     if (opts.emit_object) {
-        krc::Kr32Assembler assembler(krc::kr32_target_descriptor());
         krc::ObjectFile obj;
-        if (!assembler.assemble(mm, obj)) {
-            diagnostics.error(
-                krc::DiagnosticID{3002, "krc-error"},
-                "failed to assemble object file",
-                krc::SourceLocation{});
-            return 1;
+        if (opts.target == "kr16") {
+            krc::Kr16Assembler assembler(krc::kr16_target_descriptor());
+            if (!assembler.assemble(mm, obj)) {
+                diagnostics.error(
+                    krc::DiagnosticID{3002, "krc-error"},
+                    "failed to assemble object file",
+                    krc::SourceLocation{});
+                return 1;
+            }
+        } else {
+            krc::Kr32Assembler assembler(krc::kr32_target_descriptor());
+            if (!assembler.assemble(mm, obj)) {
+                diagnostics.error(
+                    krc::DiagnosticID{3002, "krc-error"},
+                    "failed to assemble object file",
+                    krc::SourceLocation{});
+                return 1;
+            }
         }
 
         std::string out_name = opts.output_file;

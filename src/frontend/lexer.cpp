@@ -168,6 +168,7 @@ TokenKind keyword_kind(std::string_view spelling) {
         {"constexpr", TokenKind::KwConstexpr},
         {"decltype", TokenKind::KwDecltype},
         {"noexcept", TokenKind::KwNoexcept},
+        {"move", TokenKind::KwMove},
         {"nullptr", TokenKind::KwNullptr},
         {"static_assert", TokenKind::KwStaticAssertCpp},
         {"thread_local", TokenKind::KwThreadLocalCpp},

@@ -16,7 +16,13 @@ Linker::Linker(const LinkerOptions& opts) : opts_(opts) {
     output_.flags = static_cast<std::uint16_t>(ObjectFlags::HasSymbols);
     output_.pointer_width = opts.pointer_width;
     output_.endianness = opts.endianness;
-    output_.target_numeric_id = 1; // KR32
+    if (opts.target_id == "kr16") {
+        output_.target_numeric_id = 2; // KR16
+    } else if (opts.target_id == "kr64") {
+        output_.target_numeric_id = 3; // KR64
+    } else {
+        output_.target_numeric_id = 1; // KR32
+    }
     output_.abi_version = opts.abi_version;
     output_.entry_address = 0;
 }
@@ -490,7 +496,11 @@ bool Linker::apply_relocations() {
             std::uint64_t reloc_offset_in_merged =
                 input_offset + rel.offset;
 
-            if (reloc_offset_in_merged + 4 >
+            // Determine patch width from the relocation's width field.
+            std::size_t patch_bytes = (rel.width + 7) / 8;
+            if (patch_bytes < 1) patch_bytes = 1;
+
+            if (reloc_offset_in_merged + patch_bytes >
                 merged_sections_[merged_sec_idx].payload.size()) {
                 error("relocation offset out of range");
                 return false;
@@ -504,31 +514,78 @@ bool Linker::apply_relocations() {
             switch (rel.type) {
                 case RelocType::R_KR32_Branch26:
                 case RelocType::R_Abs32: {
+                    if (patch_bytes < 4) {
+                        error("relocation width too small for 32-bit patch");
+                        return false;
+                    }
                     std::int64_t target = sym_addr + rel.addend;
-                    // Patch the low 26 bits of the instruction at this location.
-                    // The instruction is a 4-byte KR32 instruction with the
-                    // immediate field at bits [13:3].
                     std::uint32_t inst = 0;
                     std::memcpy(&inst, patch_loc, 4);
-                    // Clear the imm11 field (bits 13-3) and insert the target.
                     inst = (inst & 0xFFFFFFF8u) |
                            (static_cast<std::uint32_t>(target & 0x7FFu) << 3);
                     std::memcpy(patch_loc, &inst, 4);
                     break;
                 }
-                case RelocType::R_Abs8: {
+                case RelocType::R_KR16_Branch10: {
+                    if (patch_bytes < 2) {
+                        error("relocation width too small for 16-bit patch");
+                        return false;
+                    }
                     std::int64_t target = sym_addr + rel.addend;
-                    *patch_loc = static_cast<std::uint8_t>(target & 0xFF);
+                    // KR16 J/JAL: 2-byte instruction, 10-bit immediate at
+                    // bits [9:0]. Patch the low 10 bits.
+                    std::uint16_t inst = 0;
+                    std::memcpy(&inst, patch_loc, 2);
+                    inst = static_cast<std::uint16_t>(
+                        (inst & 0xFC00u) |
+                        (static_cast<std::uint32_t>(target & 0x3FFu)));
+                    patch_loc[0] = static_cast<std::uint8_t>(inst & 0xFF);
+                    patch_loc[1] = static_cast<std::uint8_t>((inst >> 8) & 0xFF);
                     break;
                 }
+                case RelocType::R_KR16_Branch8: {
+                    if (patch_bytes < 2) {
+                        error("relocation width too small for 16-bit patch");
+                        return false;
+                    }
+                    std::int64_t target = sym_addr + rel.addend;
+                    // KR16 BEQ/BNE etc.: 2-byte instruction, 8-bit immediate
+                    // at bits [7:0].
+                    std::uint16_t inst = 0;
+                    std::memcpy(&inst, patch_loc, 2);
+                    inst = static_cast<std::uint16_t>(
+                        (inst & 0xFF00u) |
+                        (static_cast<std::uint32_t>(target & 0xFFu)));
+                    patch_loc[0] = static_cast<std::uint8_t>(inst & 0xFF);
+                    patch_loc[1] = static_cast<std::uint8_t>((inst >> 8) & 0xFF);
+                    break;
+                }
+                case RelocType::R_KR16_Abs16:
                 case RelocType::R_Abs16: {
+                    if (patch_bytes < 2) {
+                        error("relocation width too small for 16-bit patch");
+                        return false;
+                    }
                     std::int64_t target = sym_addr + rel.addend;
                     std::uint16_t val = static_cast<std::uint16_t>(target & 0xFFFF);
                     patch_loc[0] = static_cast<std::uint8_t>(val & 0xFF);
                     patch_loc[1] = static_cast<std::uint8_t>((val >> 8) & 0xFF);
                     break;
                 }
+                case RelocType::R_Abs8: {
+                    if (patch_bytes < 1) {
+                        error("relocation width too small for 8-bit patch");
+                        return false;
+                    }
+                    std::int64_t target = sym_addr + rel.addend;
+                    *patch_loc = static_cast<std::uint8_t>(target & 0xFF);
+                    break;
+                }
                 case RelocType::R_Abs64: {
+                    if (patch_bytes < 8) {
+                        error("relocation width too small for 64-bit patch");
+                        return false;
+                    }
                     std::int64_t target = sym_addr + rel.addend;
                     std::uint64_t val = static_cast<std::uint64_t>(target);
                     for (int i = 0; i < 8; ++i)

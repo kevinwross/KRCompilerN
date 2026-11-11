@@ -109,6 +109,7 @@ enum class TokenKind : std::uint16_t {
     KwAlignofCpp,
     KwConstexpr,
     KwDecltype,
+    KwMove,
     KwNoexcept,
     KwNullptr,
     KwStaticAssertCpp,
@@ -214,6 +215,9 @@ public:
 
     // True if the last token returned was EOF.
     bool at_eof() const { return current_.kind == TokenKind::Eof; }
+
+    // Adjust the current line number (used by #line directive).
+    void set_line(std::uint32_t line) { line_ = line; }
 
 private:
     const SourceManager& source_manager_;

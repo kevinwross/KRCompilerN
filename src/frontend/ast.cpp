@@ -15,6 +15,8 @@ std::shared_ptr<Type> g_long_type;
 std::shared_ptr<Type> g_long_long_type;
 std::shared_ptr<Type> g_float_type;
 std::shared_ptr<Type> g_double_type;
+std::shared_ptr<Type> g_auto_type;
+std::shared_ptr<Type> g_decltype_type;
 
 void init_builtin_types() {
     if (g_void_type) return;
@@ -61,6 +63,16 @@ void init_builtin_types() {
     g_double_type->name = "double";
     g_double_type->size = 8;
     g_double_type->align = 8;
+    g_auto_type = std::make_shared<Type>();
+    g_auto_type->kind = TypeKind::Auto;
+    g_auto_type->name = "auto";
+    g_auto_type->size = 0;
+    g_auto_type->align = 1;
+    g_decltype_type = std::make_shared<Type>();
+    g_decltype_type->kind = TypeKind::Decltype;
+    g_decltype_type->name = "decltype";
+    g_decltype_type->size = 0;
+    g_decltype_type->align = 1;
 }
 
 } // namespace
@@ -74,6 +86,8 @@ std::shared_ptr<Type> long_type() { init_builtin_types(); return g_long_type; }
 std::shared_ptr<Type> long_long_type() { init_builtin_types(); return g_long_long_type; }
 std::shared_ptr<Type> float_type() { init_builtin_types(); return g_float_type; }
 std::shared_ptr<Type> double_type() { init_builtin_types(); return g_double_type; }
+std::shared_ptr<Type> auto_type() { init_builtin_types(); return g_auto_type; }
+std::shared_ptr<Type> decltype_type() { init_builtin_types(); return g_decltype_type; }
 
 namespace {
 
@@ -103,10 +117,16 @@ void dump_type(std::ostream& out, const std::shared_ptr<Type>& type, int depth) 
         case TypeKind::Struct: out << "struct"; break;
         case TypeKind::Union: out << "union"; break;
         case TypeKind::Pointer: out << "ptr"; break;
+        case TypeKind::Reference: out << "ref"; break;
+        case TypeKind::RvalueReference: out << "rref"; break;
+        case TypeKind::InitializerList: out << "init_list"; break;
         case TypeKind::Array: out << "array"; break;
         case TypeKind::Function: out << "function"; break;
         case TypeKind::Typedef: out << "typedef"; break;
         case TypeKind::Incomplete: out << "incomplete"; break;
+        case TypeKind::TemplateParam: out << "typeparam"; break;
+        case TypeKind::Auto: out << "auto"; break;
+        case TypeKind::Decltype: out << "decltype"; break;
     }
     if (!type->name.empty()) {
         out << " '" << type->name << "'";
@@ -116,6 +136,10 @@ void dump_type(std::ostream& out, const std::shared_ptr<Type>& type, int depth) 
     }
     if (type->align > 0) {
         out << " align=" << type->align;
+    }
+    if (type->kind == TypeKind::Struct && type->has_vtable) {
+        out << " vtable size=" << type->vtable_size
+            << " vptr_offset=" << type->vptr_offset;
     }
     if (type->kind == TypeKind::Pointer && type->pointee) {
         out << " ->\n";
@@ -156,6 +180,16 @@ void dump_expression(std::ostream& out, const std::shared_ptr<Expression>& expr,
             out << "string \"" << expr->string_value << "\""; break;
         case ExpressionKind::Identifier:
             out << "ident " << expr->identifier_name; break;
+        case ExpressionKind::This:
+            out << "this"; break;
+        case ExpressionKind::New:
+            out << "new"; break;
+        case ExpressionKind::Delete:
+            out << "delete"; break;
+        case ExpressionKind::Lambda:
+            out << "lambda"; break;
+        case ExpressionKind::Move:
+            out << "move"; break;
         case ExpressionKind::FunctionCall:
             out << "call"; break;
         case ExpressionKind::Unary:
@@ -182,6 +216,8 @@ void dump_expression(std::ostream& out, const std::shared_ptr<Expression>& expr,
             out << "statement-expr"; break;
         case ExpressionKind::StringLiteralConcat:
             out << "string-concat"; break;
+        case ExpressionKind::FoldExpression:
+            out << "fold-expression"; break;
     }
     if (expr->type) {
         out << " type=";

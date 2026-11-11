@@ -8,6 +8,7 @@ add_library(krc_backend
     frame_layout.cpp
     target_descriptor.cpp
     targets/kr32/kr32.cpp
+    targets/kr16/kr16.cpp
 )
 
-target_include_directories(krc_backend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../ir ${CMAKE_CURRENT_SOURCE_DIR}/../frontend ${CMAKE_CURRENT_SOURCE_DIR}/targets/kr32)
+target_include_directories(krc_backend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../ir ${CMAKE_CURRENT_SOURCE_DIR}/../frontend ${CMAKE_CURRENT_SOURCE_DIR}/targets/kr32 ${CMAKE_CURRENT_SOURCE_DIR}/targets/kr16)

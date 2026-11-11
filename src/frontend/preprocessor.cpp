@@ -37,7 +37,6 @@ bool Preprocessor::start_file(int file_id) {
     source_manager_.push_include(file_id);
     lexer_stack_.push_back(std::make_unique<Lexer>(source_manager_, file_id));
     last_line_ = 0;
-    has_pushed_back_ = false;
     // Do not prime here; the caller (parse_translation_unit) will call next().
     return true;
 }
@@ -59,15 +58,22 @@ bool Preprocessor::pop_file() {
     end_file();
     // Parent file's lexer is already on the stack — no need to recreate.
     last_line_ = 0;
-    has_pushed_back_ = false;
     return true;
+}
+
+int Preprocessor::current_file_id() const noexcept {
+    if (include_stack_.empty()) {
+        return -1;
+    }
+    return include_stack_.back();
 }
 
 // Read the next token, honoring any pushed-back token first.
 LexResult Preprocessor::read_token() {
-    if (has_pushed_back_) {
-        has_pushed_back_ = false;
-        return {pushed_back_, true};
+    if (!pushed_back_.empty()) {
+        Token tok = pushed_back_.back();
+        pushed_back_.pop_back();
+        return {tok, true};
     }
     if (lexer_stack_.empty()) {
         return {Token{TokenKind::Eof, {}, "", 0}, true};
@@ -76,13 +82,21 @@ LexResult Preprocessor::read_token() {
 }
 
 void Preprocessor::push_back(const Token& tok) {
-    pushed_back_ = tok;
-    has_pushed_back_ = true;
+    pushed_back_.push_back(tok);
 }
 
 LexResult Preprocessor::next() {
     // If we have queued tokens (from macro expansion), return them first.
     if (!queued_tokens_.empty()) {
+        Token front = queued_tokens_.front();
+        // If the next queued token is a predefined macro (not a user macro),
+        // expand it now so nested references like #define X __STDC_VERSION__
+        // work correctly.
+        if (front.kind == TokenKind::Identifier &&
+            !find_macro(front.text) &&
+            handle_predefined_macro(front)) {
+            // Expansion replaced queued_tokens_; take the first expansion token.
+        }
         current_ = queued_tokens_.front();
         queued_tokens_.erase(queued_tokens_.begin());
         if (current_.kind == TokenKind::Eof) {
@@ -146,6 +160,16 @@ LexResult Preprocessor::next() {
                         expanding_[std::string(tok.text)]--;
                         queued_tokens_ = std::move(expanded);
                         if (!queued_tokens_.empty()) {
+                            // If the first expansion token is a predefined
+                            // macro, expand it now.
+                            if (queued_tokens_.front().kind ==
+                                    TokenKind::Identifier &&
+                                !find_macro(queued_tokens_.front().text) &&
+                                handle_predefined_macro(
+                                    queued_tokens_.front())) {
+                                // Expansion replaced queued_tokens_; take the
+                                // first expansion token.
+                            }
                             current_ = queued_tokens_.front();
                             queued_tokens_.erase(queued_tokens_.begin());
                             return {current_, true};
@@ -164,12 +188,31 @@ LexResult Preprocessor::next() {
                     expanding_[std::string(tok.text)]--;
                     queued_tokens_ = std::move(expanded);
                     if (!queued_tokens_.empty()) {
+                        // If the first expansion token is a predefined macro,
+                        // expand it now.
+                        if (queued_tokens_.front().kind ==
+                                TokenKind::Identifier &&
+                            !find_macro(queued_tokens_.front().text) &&
+                            handle_predefined_macro(
+                                queued_tokens_.front())) {
+                            // Expansion replaced queued_tokens_; take the
+                            // first expansion token.
+                        }
                         current_ = queued_tokens_.front();
                         queued_tokens_.erase(queued_tokens_.begin());
                         return {current_, true};
                     }
                 }
             }
+        } else if (tok.text == "_Pragma") {
+            // _Pragma operator: _Pragma("string") is equivalent to #pragma string
+            if (handle_pragma_operator(tok)) {
+                return next();
+            }
+        } else if (handle_predefined_macro(tok)) {
+            current_ = queued_tokens_.front();
+            queued_tokens_.erase(queued_tokens_.begin());
+            return {current_, true};
         }
     }
 
@@ -199,6 +242,12 @@ void Preprocessor::undefine_macro(std::string_view name) {
 bool Preprocessor::is_macro_defined(std::string_view name) const {
     auto it = macros_.find(std::string(name));
     if (it == macros_.end()) {
+        // Predefined macros are always defined.
+        if (name == "__FILE__" || name == "__LINE__" || name == "__COUNTER__" ||
+            name == "__KR32__" || name == "__KR16__" || name == "__KR64__" ||
+            name == "__STDC_VERSION__" || name == "__cplusplus") {
+            return true;
+        }
         return false;
     }
     return it->second.is_defined;
@@ -256,6 +305,27 @@ std::vector<std::string> Preprocessor::search_dirs() const {
     return dirs;
 }
 
+// Check whether a header file can be found via the include search path.
+// Does not load the file into the source manager permanently (the path is
+// only checked for existence).
+bool Preprocessor::header_found(std::string_view header) const {
+    // Try the path as-is first (for quoted includes relative to current file).
+    int file_id = source_manager_.load_file(std::string(header));
+    if (file_id >= 0) {
+        return true;
+    }
+    // Then search include directories.
+    std::filesystem::path include_path(header);
+    for (const auto& dir : search_dirs()) {
+        std::filesystem::path full_path = std::filesystem::path(dir) / include_path;
+        file_id = source_manager_.load_file(full_path.string());
+        if (file_id >= 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // --- Directive handling ----------------------------------------------
 
 bool Preprocessor::handle_directive() {
@@ -265,7 +335,10 @@ bool Preprocessor::handle_directive() {
     }
     Token directive_name = result.token;
 
-    if (directive_name.kind != TokenKind::Identifier) {
+    // Directive names may be identifiers or C keywords (e.g. "if", "else").
+    if (directive_name.kind != TokenKind::Identifier &&
+        !is_c11_keyword(directive_name.kind) &&
+        !is_cpp_keyword(directive_name.kind)) {
         diagnostics_.error(
             DiagnosticID{2000, "pp-error"},
             "expected directive name after '#'",
@@ -341,6 +414,8 @@ void Preprocessor::handle_define() {
             if (p_result.token.kind == TokenKind::RParen) break;
             if (p_result.token.kind == TokenKind::Ellipsis) {
                 macro.is_variadic = true;
+                // __VA_ARGS__ is the variadic parameter name.
+                macro.params.push_back("__VA_ARGS__");
                 // Expect ')' next.
                 LexResult rp = read_token();
                 (void)rp;
@@ -463,10 +538,10 @@ void Preprocessor::handle_if() {
     frame.active = frame.parent_active;
 
     if (frame.active) {
-        // Placeholder: accept all #if conditions.
-        // A full implementation would evaluate the constant expression.
-        frame.active = true;
-        frame.saw_true = true;
+        // Evaluate the #if condition. Currently supports defined(NAME) and
+        // defined NAME. Other expressions default to true (placeholder).
+        frame.active = evaluate_defined_expression();
+        frame.saw_true = frame.active;
     }
 
     conditional_stack_.push_back(std::move(frame));
@@ -516,8 +591,10 @@ void Preprocessor::handle_elif() {
     if (frame.saw_true || frame.saw_else) {
         frame.active = false;
     } else if (frame.parent_active) {
-        frame.active = true;
-        frame.saw_true = true;
+        // Evaluate the #elif condition. Currently supports defined(NAME) and
+        // defined NAME. Other expressions default to true (placeholder).
+        frame.active = evaluate_defined_expression();
+        frame.saw_true = frame.active;
     } else {
         frame.active = false;
     }
@@ -551,6 +628,95 @@ void Preprocessor::handle_endif() {
     conditional_stack_.pop_back();
 }
 
+// Evaluate the condition expression after #if or #elif.  Reads tokens
+// until end of line, looking for defined(NAME) or defined NAME.  If a
+// defined() expression is found, returns the macro's defined status.
+// Otherwise returns true (placeholder: accept unknown expressions).
+bool Preprocessor::evaluate_defined_expression() {
+    // Remember the starting line so we know when the directive line ends.
+    uint32_t start_line = current().location.line;
+    bool result = true;  // placeholder: accept unknown expressions
+    bool saw_defined = false;
+    bool saw_has_include = false;
+
+    while (true) {
+        LexResult r = read_token();
+        if (!r.ok) break;
+        Token tok = r.token;
+        // Stop at end of line (but push the token back so it can be
+        // processed as the start of the next line/directive).
+        if (tok.location.line != start_line) {
+            push_back(tok);
+            break;
+        }
+
+        if (tok.kind == TokenKind::Identifier && tok.text == "defined") {
+            saw_defined = true;
+            continue;
+        }
+
+        if (tok.kind == TokenKind::Identifier && tok.text == "__has_include") {
+            saw_has_include = true;
+            continue;
+        }
+
+        if (saw_defined) {
+            if (tok.kind == TokenKind::LParen) {
+                // defined(NAME)
+                LexResult r2 = read_token();
+                if (r2.ok && r2.token.kind == TokenKind::Identifier) {
+                    result = is_macro_defined(r2.token.text);
+                }
+                // Consume the closing paren if present.
+                LexResult r3 = read_token();
+                (void)r3;
+            } else if (tok.kind == TokenKind::Identifier) {
+                // defined NAME
+                result = is_macro_defined(tok.text);
+            }
+            saw_defined = false;
+        }
+
+        if (saw_has_include) {
+            if (tok.kind == TokenKind::LParen) {
+                // __has_include("...") / __has_include(<...>)
+                LexResult r2 = read_token();
+                if (!r2.ok) break;
+                Token tok2 = r2.token;
+                if (tok2.kind == TokenKind::StringLiteral ||
+                    tok2.kind == TokenKind::Less) {
+                    // __has_include("...") or __has_include(<...>)
+                    std::string header;
+                    if (tok2.kind == TokenKind::StringLiteral) {
+                        header = std::string(tok2.text);
+                        if (header.size() >= 2 && header.front() == '"' &&
+                            header.back() == '"') {
+                            header = header.substr(1, header.size() - 2);
+                        }
+                    } else {
+                        // Angle-bracketed: read until '>'
+                        std::ostringstream oss;
+                        while (true) {
+                            LexResult r3 = read_token();
+                            if (!r3.ok || r3.token.kind == TokenKind::Greater)
+                                break;
+                            oss << r3.token.text;
+                        }
+                        header = oss.str();
+                    }
+                    result = header_found(header);
+                }
+                // Consume the closing paren if present.
+                LexResult r3 = read_token();
+                (void)r3;
+            }
+            saw_has_include = false;
+        }
+    }
+
+    return result;
+}
+
 void Preprocessor::handle_pragma() {
     LexResult result = read_token();
     if (!result.ok) return;
@@ -563,8 +729,96 @@ void Preprocessor::handle_pragma() {
     }
 }
 
+bool Preprocessor::handle_pragma_operator(const Token& pragma_tok) {
+    // Read the opening '('.
+    LexResult result = read_token();
+    if (!result.ok || result.token.kind != TokenKind::LParen) {
+        diagnostics_.error(
+            DiagnosticID{2011, "pp-error-pragma"},
+            "expected '(' after _Pragma",
+            pragma_tok.location);
+        return false;
+    }
+
+    // Read the string literal argument.
+    result = read_token();
+    if (!result.ok || result.token.kind != TokenKind::StringLiteral) {
+        diagnostics_.error(
+            DiagnosticID{2012, "pp-error-pragma"},
+            "expected string literal after _Pragma(",
+            pragma_tok.location);
+        return false;
+    }
+
+    // Extract the string content (without surrounding quotes).
+    std::string raw = std::string(result.token.text);
+    if (raw.size() < 2 || raw.front() != '"' || raw.back() != '"') {
+        diagnostics_.error(
+            DiagnosticID{2013, "pp-error-pragma"},
+            "malformed string literal in _Pragma",
+            result.token.location);
+        return false;
+    }
+    std::string content = raw.substr(1, raw.size() - 2);
+
+    // Unescape C escape sequences: \\ -> \, \" -> ".
+    std::string unescaped;
+    unescaped.reserve(content.size());
+    for (std::size_t i = 0; i < content.size(); ++i) {
+        if (content[i] == '\\' && i + 1 < content.size()) {
+            char next = content[i + 1];
+            if (next == '\\' || next == '"') {
+                unescaped.push_back(next);
+                ++i;
+            } else {
+                // Unknown escape: keep the backslash and the character.
+                unescaped.push_back(content[i]);
+                unescaped.push_back(next);
+                ++i;
+            }
+        } else {
+            unescaped.push_back(content[i]);
+        }
+    }
+
+    // Read the closing ')'.
+    result = read_token();
+    if (!result.ok || result.token.kind != TokenKind::RParen) {
+        diagnostics_.error(
+            DiagnosticID{2014, "pp-error-pragma"},
+            "expected ')' after _Pragma string",
+            pragma_tok.location);
+        return false;
+    }
+
+    // Process the unescaped content as a pragma directive.
+    if (unescaped == "once") {
+        if (!include_stack_.empty()) {
+            pragma_once_files_.insert(include_stack_.back());
+        }
+    }
+    // Other pragmas are accepted but not acted upon (documented no-op).
+
+    return true;
+}
+
 void Preprocessor::handle_line() {
-    // #line number "filename" — placeholder, skip remaining tokens.
+    // #line number "filename" — adjust line tracking for diagnostics.
+    LexResult result = read_token();
+    if (!result.ok) return;
+    if (result.token.kind != TokenKind::IntegerLiteral) return;
+    std::uint32_t new_line = std::stoul(std::string(result.token.text));
+
+    // Consume optional filename.
+    result = read_token();
+    if (result.ok && result.token.kind == TokenKind::StringLiteral) {
+        // Optionally update current file tracking; filename is informational.
+    }
+
+    if (!lexer_stack_.empty()) {
+        lexer_stack_.back()->set_line(new_line);
+    }
+    last_line_ = new_line;
 }
 
 void Preprocessor::handle_error(bool is_warning) {
@@ -608,6 +862,74 @@ std::vector<Token> Preprocessor::expand_macro(const MacroDefinition& macro,
     }
 
     return result;
+}
+
+bool Preprocessor::handle_predefined_macro(const Token& tok) {
+    std::string name = std::string(tok.text);
+
+    if (name == "__FILE__") {
+        queued_tokens_.clear();
+        const SourceBuffer* buffer =
+            source_manager_.get_buffer(current_file_id());
+        std::string path = buffer ? buffer->path() : std::string("<unknown>");
+        // Emit a string literal token containing the file path.
+        std::string literal = "\"" + path + "\"";
+        string_storage_.push_back(std::move(literal));
+        Token t{TokenKind::StringLiteral, tok.location, string_storage_.back(),
+                string_storage_.back().size()};
+        queued_tokens_.push_back(std::move(t));
+        return true;
+    }
+
+    if (name == "__LINE__") {
+        queued_tokens_.clear();
+        std::string line_str = std::to_string(tok.location.line);
+        string_storage_.push_back(std::move(line_str));
+        Token t{TokenKind::IntegerLiteral, tok.location, string_storage_.back(),
+                string_storage_.back().size()};
+        queued_tokens_.push_back(std::move(t));
+        return true;
+    }
+
+    if (name == "__COUNTER__") {
+        queued_tokens_.clear();
+        std::string counter_str = std::to_string(counter_++);
+        string_storage_.push_back(std::move(counter_str));
+        Token t{TokenKind::IntegerLiteral, tok.location, string_storage_.back(),
+                string_storage_.back().size()};
+        queued_tokens_.push_back(std::move(t));
+        return true;
+    }
+
+    // Predefined target macros (plan.md §4.2 / target_descriptor.h).
+    if (name == "__KR32__" || name == "__KR16__" || name == "__KR64__") {
+        queued_tokens_.clear();
+        string_storage_.push_back("1");
+        Token t{TokenKind::IntegerLiteral, tok.location, string_storage_.back(),
+                string_storage_.back().size()};
+        queued_tokens_.push_back(std::move(t));
+        return true;
+    }
+
+    if (name == "__STDC_VERSION__") {
+        queued_tokens_.clear();
+        string_storage_.push_back("201112L");
+        Token t{TokenKind::IntegerLiteral, tok.location, string_storage_.back(),
+                string_storage_.back().size()};
+        queued_tokens_.push_back(std::move(t));
+        return true;
+    }
+
+    if (name == "__cplusplus") {
+        queued_tokens_.clear();
+        string_storage_.push_back("201703L");
+        Token t{TokenKind::IntegerLiteral, tok.location, string_storage_.back(),
+                string_storage_.back().size()};
+        queued_tokens_.push_back(std::move(t));
+        return true;
+    }
+
+    return false;
 }
 
 bool Preprocessor::collect_macro_arguments(
@@ -658,24 +980,77 @@ bool Preprocessor::collect_macro_arguments(
 std::vector<Token> Preprocessor::substitute_macro_parameters(
     const MacroDefinition& macro,
     const std::vector<std::vector<Token>>& args) {
-    std::vector<Token> result;
+    std::vector<Token> substituted;
 
-    for (const Token& tok : macro.replacement) {
-        bool substituted = false;
-        if (tok.kind == TokenKind::Identifier) {
-            for (std::size_t i = 0; i < macro.params.size(); ++i) {
-                if (tok.text == macro.params[i]) {
-                    if (i < args.size()) {
-                        for (const Token& arg_tok : args[i]) {
-                            result.push_back(arg_tok);
+    // First pass: substitute parameters and handle stringification (#).
+    for (std::size_t i = 0; i < macro.replacement.size(); ++i) {
+        const Token& tok = macro.replacement[i];
+
+        // Stringification: # followed by a parameter name.
+        if (tok.kind == TokenKind::Hash && i + 1 < macro.replacement.size()) {
+            const Token& next = macro.replacement[i + 1];
+            if (next.kind == TokenKind::Identifier) {
+                bool found_param = false;
+                for (std::size_t p = 0; p < macro.params.size(); ++p) {
+                    if (next.text == macro.params[p] && p < args.size()) {
+                        // Build string literal from argument tokens.
+                        std::string str;
+                        for (const Token& arg_tok : args[p]) {
+                            str += std::string(arg_tok.text);
                         }
+                        string_storage_.push_back("\"" + str + "\"");
+                        Token str_tok{
+                            TokenKind::StringLiteral, tok.location,
+                            string_storage_.back(), string_storage_.back().size()};
+                        substituted.push_back(str_tok);
+                        ++i;  // skip the parameter token
+                        found_param = true;
+                        break;
                     }
-                    substituted = true;
+                }
+                if (found_param) continue;
+            }
+        }
+
+        // Regular parameter substitution.
+        if (tok.kind == TokenKind::Identifier) {
+            bool found_param = false;
+            for (std::size_t p = 0; p < macro.params.size(); ++p) {
+                if (tok.text == macro.params[p] && p < args.size()) {
+                    for (const Token& arg_tok : args[p]) {
+                        substituted.push_back(arg_tok);
+                    }
+                    found_param = true;
                     break;
                 }
             }
+            if (found_param) continue;
         }
-        if (!substituted) {
+
+        substituted.push_back(tok);
+    }
+
+    // Second pass: token pasting (##).
+    std::vector<Token> result;
+    for (std::size_t i = 0; i < substituted.size(); ++i) {
+        const Token& tok = substituted[i];
+        if (tok.kind == TokenKind::HashHash && !result.empty() &&
+            i + 1 < substituted.size()) {
+            // Paste previous and next tokens.
+            Token& prev = result.back();
+            const Token& next_tok = substituted[i + 1];
+            std::string combined =
+                std::string(prev.text) + std::string(next_tok.text);
+            string_storage_.push_back(std::move(combined));
+            TokenKind combined_kind =
+                (prev.kind == TokenKind::Identifier ||
+                 next_tok.kind == TokenKind::Identifier)
+                    ? TokenKind::Identifier
+                    : prev.kind;
+            prev = Token{combined_kind, prev.location, string_storage_.back(),
+                         string_storage_.back().size()};
+            ++i;  // skip the next token (consumed by ##)
+        } else {
             result.push_back(tok);
         }
     }

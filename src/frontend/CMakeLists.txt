@@ -9,6 +9,7 @@ add_library(krc_frontend
     preprocessor.cpp
     sema.cpp
     debug_info.cpp
+    mangle.cpp
 )
 
 target_include_directories(krc_frontend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

@@ -3,6 +3,7 @@
 add_library(krc_asm
     object.cpp
     assembler.cpp
+    kr16_assembler.cpp
 )
 
 target_include_directories(krc_asm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
