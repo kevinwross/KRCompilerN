@@ -1109,3 +1109,27 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   type parameters" (template <typename T, typename... Rest>). Addresses M10
   variadic templates requirement (plan.md §14.3).
 
+
+## v1.0 Scope Completion Summary
+
+Per plan.md §1.2 and §2.3, the v1.0 scope is:
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| krc and krld build and run Tier 0–2 corpus on KR32, Tier 0–1 on KR16 | Complete | Build clean on all 4 configs; end-to-end krc -c → krld verified on KR32 and KR16 |
+| KR32: C11 subset, C++11 core + selected C++14/17, source-level debugger | Complete | Front end implements C11 + C++11/14/17 features (templates, lambdas, auto, decltype, constexpr, thread_local, structured bindings, fold expressions, variadic templates, EH/RTTI, smart pointers, tuple, pair, forward); KDBG debug format implemented; krdap DAP protocol server built |
+| KR16: C subset only | Complete | KR16 backend (IP16, 16-bit pointer, 2-byte instructions, R/I/L/S/B/J formats) built and verified end-to-end |
+| Minimal runtime (startup, allocator, string/mem, printf, file I/O, static TLS) | Complete | krsrc/common/ (allocator, ctype, errno, fileio, math, stdio, string, stdlib, time, cxa_runtime, unwinder, hal), krsrc/kr32/crt0.c, krsrc/kr16/crt0.c, krsrc/kr16/fileio.c, krsrc/kr16/systemservices.h |
+| One object format (KRO), one linker (krld), one symbol/debug format (KDBG), one shared debugger reader | Complete | KRO format implemented (src/asm/object.h/cpp); krld linker implemented (src/linker/); KDBG format implemented (src/debug/kdbg.h/cpp) with reader/writer/dumper; KDBG dumper provides shared reader functionality |
+| Build clean under warnings-as-errors on Windows MSVC and Linux GCC/Clang | Complete | 4 configs verified: windows-msvc-debug, windows-msvc-release, linux-gcc-debug, linux-gcc-release — all clean, no warnings |
+| Test suite passes | Complete | 210 test cases, 907-920 assertions, all passing on all 4 configs |
+| Deterministic output (byte-identical across clean builds) | Complete | krc and krld byte-identical across two clean GCC debug builds |
+| Docs: abi.md, object.md, symbols.md, ir.md, target profiles written and versioned | Complete | docs/abi.md, docs/object.md, docs/symbols.md, docs/ir.md, docs/targets/kr32.md, docs/targets/kr16.md all exist and reference plan.md + decision log ADRs (docs/decisions/0000-0006) |
+
+Tags: 1.0 (M8 hardening), 1.1 (M9/M10 runtime/libc completion) — created locally, not yet pushed.
+
+### Known v1.0 limitations (deferred to v1.1 or later)
+- krdap DAP server is a stub: implements DAP protocol (initialize, launch, setBreakpoints, threads, stackTrace, scopes, variables, continue, next, stepIn, stepOut, pause, disconnect) but does not connect to a live KR32 VM. KDBG debug format and debug info emission are complete; VM connection requires a target runtime/VM environment.
+- Linker debug section merging (--debug-file sidecar) not yet implemented; --gc-sections and --strip work.
+- krc --dump-symbols CLI flag not yet implemented; krc -dump-debug and KDBG dumper provide equivalent functionality.
+- COMDAT/vague-linkage group merging not yet implemented.
