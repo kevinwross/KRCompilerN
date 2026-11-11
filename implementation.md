@@ -852,6 +852,10 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   requirement (plan.md §15.5).
 - All 4 working build configs clean; ctest green on both GCC configs.
 - 210 test cases, 920 assertions, all passing.
+- src/runtime/CMakeLists.txt — Added M9/M10 runtime integration: full KR32 `libc.c` and `kr32os/` (13 kernel/user files) built as `krc_runtime_kr32` with `-fno-builtin -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast` (KR32 source uses 32-bit pointer storage patterns incompatible with GCC builtins). KR16 `crt0.c` retained.
+- src/runtime/kr32/libc.c — KR32 C runtime: allocator, buffered stdio, printf/scanf, str*/mem*, strto*, qsort, POSIX-ish file I/O, C++ allocation hooks (3,239 lines). Ported with `uintptr_t` pointer storage, `__kr32_heap_start()`/`__kr32_heap_end()` extern declarations, and forward declarations for `feof`/`strlen`.
+- src/runtime/kr32/kr32os/ — KR32 OS kernel: console, main, memory, process, shell, syscall, timer, traps, user, fault, init, wx (13 files, ~12k LOC).
+- src/runtime/common/ — Existing common runtime (allocator, ctype, errno, fileio, math, stdio, string, stdlib, time, cxa_runtime, unwinder, hal).
 - src/frontend/ast.h — Added `TypeKind::UniquePtr` and `TypeKind::SharedPtr` with `smart_ptr_type` field for M10 smart pointer types.
 - src/frontend/ast.cpp — Added `UniquePtr` and `SharedPtr` to `dump_type()`.
 - src/frontend/parser.cpp — Parses `unique_ptr<T>` and `shared_ptr<T>` as smart pointer types in `parse_type_specifier()`.
@@ -993,6 +997,10 @@ End-to-end verified: `write_kdbg()` + `read_kdbg()` produce a valid KDBG contain
   requirement (plan.md §15.5).
 - All 4 working build configs clean; ctest green on both GCC configs.
 - 210 test cases, 920 assertions, all passing.
+- src/runtime/CMakeLists.txt — Added M9/M10 runtime integration: full KR32 `libc.c` and `kr32os/` (13 kernel/user files) built as `krc_runtime_kr32` with `-fno-builtin -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast` (KR32 source uses 32-bit pointer storage patterns incompatible with GCC builtins). KR16 `crt0.c` retained.
+- src/runtime/kr32/libc.c — KR32 C runtime: allocator, buffered stdio, printf/scanf, str*/mem*, strto*, qsort, POSIX-ish file I/O, C++ allocation hooks (3,239 lines). Ported with `uintptr_t` pointer storage, `__kr32_heap_start()`/`__kr32_heap_end()` extern declarations, and forward declarations for `feof`/`strlen`.
+- src/runtime/kr32/kr32os/ — KR32 OS kernel: console, main, memory, process, shell, syscall, timer, traps, user, fault, init, wx (13 files, ~12k LOC).
+- src/runtime/common/ — Existing common runtime (allocator, ctype, errno, fileio, math, stdio, string, stdlib, time, cxa_runtime, unwinder, hal).
 - src/frontend/ast.h — Added `TypeKind::UniquePtr` and `TypeKind::SharedPtr` with `smart_ptr_type` field for M10 smart pointer types.
 - src/frontend/ast.cpp — Added `UniquePtr` and `SharedPtr` to `dump_type()`.
 - src/frontend/parser.cpp — Parses `unique_ptr<T>` and `shared_ptr<T>` as smart pointer types in `parse_type_specifier()`.

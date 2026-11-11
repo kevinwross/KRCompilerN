@@ -28,9 +28,25 @@ target_include_directories(krc_runtime_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 # supported by the front end).
 add_library(krc_runtime_kr32
     kr32/crt0.c
+    kr32/libc.c
+    kr32/kr32os/kernel/console.c
+    kr32/kr32os/kernel/main.c
+    kr32/kr32os/kernel/memory.c
+    kr32/kr32os/kernel/process.c
+    kr32/kr32os/kernel/shell.c
+    kr32/kr32os/kernel/syscall.c
+    kr32/kr32os/kernel/timer.c
+    kr32/kr32os/kernel/traps.c
+    kr32/kr32os/kernel/user.c
+    kr32/kr32os/user/fault.c
+    kr32/kr32os/user/init.c
+    kr32/kr32os/user/wx.c
 )
 
 target_include_directories(krc_runtime_kr32 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/common)
+target_include_directories(krc_runtime_kr32 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/kr32/kr32os/kernel)
+target_include_directories(krc_runtime_kr32 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/kr32/kr32os/user)
+target_compile_options(krc_runtime_kr32 PRIVATE -fno-builtin -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast)
 
 add_library(krc_runtime_kr16
     kr16/crt0.c
