@@ -36,6 +36,8 @@ struct Symbol {
     bool is_constexpr = false;    // C++11: constexpr function/variable specifier
     bool has_alignas = false;     // C++: alignas specifier present
     SourceLocation location;      // where the symbol was declared
+    std::int64_t int_value = 0;   // integer constant value (for enum constants)
+    bool is_constant = false;     // true if this is a compile-time constant
 };
 
 // A scope: a symbol table with a parent scope for lexical scoping.
@@ -205,6 +207,10 @@ private:
     // lookup during Sema of member functions). Null when not in a class.
     std::shared_ptr<Type> current_class_type_;
 
+    // The return type of the function currently being type-checked (for
+    // `return` statement validation). Null when not in a function body.
+    std::shared_ptr<Type> current_function_return_type_;
+
     // C++ language mode: when true, external function symbols get mangled
     // names via the Itanium-like Mangler.
     bool is_cpp_ = false;
@@ -244,6 +250,7 @@ public:
     bool type_fold_expression(Expression& expr);
     bool type_throw(Expression& expr);
     bool type_typeid(Expression& expr);
+    bool type_va_arg(Expression& expr);
 
 private:
     // ----- Expression typing (internal) -----

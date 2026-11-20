@@ -13,6 +13,7 @@ std::shared_ptr<Type> g_short_type;
 std::shared_ptr<Type> g_int_type;
 std::shared_ptr<Type> g_long_type;
 std::shared_ptr<Type> g_long_long_type;
+std::shared_ptr<Type> g_unsigned_type;
 std::shared_ptr<Type> g_float_type;
 std::shared_ptr<Type> g_double_type;
 std::shared_ptr<Type> g_auto_type;
@@ -53,6 +54,11 @@ void init_builtin_types() {
     g_long_long_type->name = "long long";
     g_long_long_type->size = 8;
     g_long_long_type->align = 8;
+    g_unsigned_type = std::make_shared<Type>();
+    g_unsigned_type->kind = TypeKind::Int;
+    g_unsigned_type->name = "unsigned int";
+    g_unsigned_type->size = 4;
+    g_unsigned_type->align = 4;
     g_float_type = std::make_shared<Type>();
     g_float_type->kind = TypeKind::Float;
     g_float_type->name = "float";
@@ -84,6 +90,7 @@ std::shared_ptr<Type> short_type() { init_builtin_types(); return g_short_type; 
 std::shared_ptr<Type> int_type() { init_builtin_types(); return g_int_type; }
 std::shared_ptr<Type> long_type() { init_builtin_types(); return g_long_type; }
 std::shared_ptr<Type> long_long_type() { init_builtin_types(); return g_long_long_type; }
+std::shared_ptr<Type> unsigned_type() { init_builtin_types(); return g_unsigned_type; }
 std::shared_ptr<Type> float_type() { init_builtin_types(); return g_float_type; }
 std::shared_ptr<Type> double_type() { init_builtin_types(); return g_double_type; }
 std::shared_ptr<Type> auto_type() { init_builtin_types(); return g_auto_type; }
@@ -182,6 +189,8 @@ void dump_expression(std::ostream& out, const std::shared_ptr<Expression>& expr,
             out << "char '" << expr->char_value << "'"; break;
         case ExpressionKind::StringLiteral:
             out << "string \"" << expr->string_value << "\""; break;
+        case ExpressionKind::BooleanLiteral:
+            out << (expr->bool_value ? "true" : "false"); break;
         case ExpressionKind::Identifier:
             out << "ident " << expr->identifier_name; break;
         case ExpressionKind::This:
@@ -228,6 +237,8 @@ void dump_expression(std::ostream& out, const std::shared_ptr<Expression>& expr,
             out << "throw"; break;
         case ExpressionKind::Typeid:
             out << "typeid"; break;
+        case ExpressionKind::VaArg:
+            out << "va-arg"; break;
     }
     if (expr->type) {
         out << " type=";

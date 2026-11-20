@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <sstream>
 
@@ -132,13 +133,40 @@ std::shared_ptr<Symbol> Sema::lookup_member(
     const std::shared_ptr<Type>& class_type,
     std::string_view name) const {
     if (!class_type) return nullptr;
+    // Resolve through typedefs to find the underlying struct/union members.
+    auto resolved = class_type;
+    while (resolved->kind == TypeKind::Typedef && resolved->underlying) {
+        resolved = resolved->underlying;
+    }
     // Class members are stored in the Type's members vector.  Search by name.
-    for (const auto& m : class_type->members) {
+    for (const auto& m : resolved->members) {
         for (const auto& d : m->declarators) {
             if (d->name == name) {
+                // Build the full type from the base type plus declarator
+                // modifiers (pointer, array, function), matching how
+                // Sema::walk_declaration builds declarator types.
+                std::shared_ptr<Type> member_type = m->type;
+                if (d->is_pointer) {
+                    member_type = pointer_to(member_type);
+                }
+                for (const auto& [size, is_vla] : d->array_sizes) {
+                    member_type = array_of(member_type, size);
+                }
+                if (d->is_function) {
+                    std::vector<std::shared_ptr<Type>> param_types;
+                    if (!d->param_types.empty()) {
+                        param_types = d->param_types;
+                    } else {
+                        for (const auto& pn : d->param_names) {
+                            (void)pn;
+                            param_types.push_back(builtin_int_);
+                        }
+                    }
+                    member_type = function_type(member_type, param_types, d->is_variadic);
+                }
                 auto sym = std::make_shared<Symbol>();
                 sym->name = d->name;
-                sym->type = m->type;
+                sym->type = member_type;
                 sym->storage = m->storage;
                 sym->is_static = m->is_static;
                 sym->is_virtual = m->is_virtual;
@@ -172,9 +200,19 @@ void Sema::leave_function_scope() {
 // Type classification helpers
 // =====================================================================
 
+// Resolve typedef chains to the underlying type.
+static std::shared_ptr<Type> resolve_typedef(const std::shared_ptr<Type>& t) {
+    auto cur = t;
+    while (cur->kind == TypeKind::Typedef && cur->underlying) {
+        cur = cur->underlying;
+    }
+    return cur;
+}
+
 bool Sema::is_integer_type(const std::shared_ptr<Type>& t) const {
     if (!t) return false;
-    switch (t->kind) {
+    auto base = resolve_typedef(t);
+    switch (base->kind) {
         case TypeKind::Bool:
         case TypeKind::Char:
         case TypeKind::Short:
@@ -190,7 +228,8 @@ bool Sema::is_integer_type(const std::shared_ptr<Type>& t) const {
 
 bool Sema::is_floating_type(const std::shared_ptr<Type>& t) const {
     if (!t) return false;
-    switch (t->kind) {
+    auto base = resolve_typedef(t);
+    switch (base->kind) {
         case TypeKind::Float:
         case TypeKind::Double:
         case TypeKind::LongDouble:
@@ -205,23 +244,33 @@ bool Sema::is_arithmetic_type(const std::shared_ptr<Type>& t) const {
 }
 
 bool Sema::is_pointer_type(const std::shared_ptr<Type>& t) const {
-    return t && t->kind == TypeKind::Pointer;
+    if (!t) return false;
+    auto base = resolve_typedef(t);
+    return base->kind == TypeKind::Pointer;
 }
 
 bool Sema::is_reference_type(const std::shared_ptr<Type>& t) const {
-    return t && (t->kind == TypeKind::Reference || t->kind == TypeKind::RvalueReference);
+    if (!t) return false;
+    auto base = resolve_typedef(t);
+    return base->kind == TypeKind::Reference || base->kind == TypeKind::RvalueReference;
 }
 
 bool Sema::is_void_type(const std::shared_ptr<Type>& t) const {
-    return t && t->kind == TypeKind::Void;
+    if (!t) return false;
+    auto base = resolve_typedef(t);
+    return base->kind == TypeKind::Void;
 }
 
 bool Sema::is_array_type(const std::shared_ptr<Type>& t) const {
-    return t && t->kind == TypeKind::Array;
+    if (!t) return false;
+    auto base = resolve_typedef(t);
+    return base->kind == TypeKind::Array;
 }
 
 bool Sema::is_function_type(const std::shared_ptr<Type>& t) const {
-    return t && t->kind == TypeKind::Function;
+    if (!t) return false;
+    auto base = resolve_typedef(t);
+    return base->kind == TypeKind::Function;
 }
 
 bool Sema::is_scalar_type(const std::shared_ptr<Type>& t) const {
@@ -232,9 +281,13 @@ bool Sema::types_compatible(const std::shared_ptr<Type>& a,
                             const std::shared_ptr<Type>& b) const {
     if (!a || !b) return false;
     if (a == b) return true; // same canonical type
-    if (a->kind != b->kind) return false;
 
-    switch (a->kind) {
+    // Resolve typedef chains before comparing kinds.
+    auto a_base = resolve_typedef(a);
+    auto b_base = resolve_typedef(b);
+    if (a_base == b_base) return true;
+    if (a_base->kind != b_base->kind) return false;
+    switch (a_base->kind) {
         case TypeKind::Void:
         case TypeKind::Bool:
         case TypeKind::Char:
@@ -251,26 +304,28 @@ bool Sema::types_compatible(const std::shared_ptr<Type>& a,
         case TypeKind::Enum:
         case TypeKind::Struct:
         case TypeKind::Union:
-            // Tag types: compatible only if same declaration (same pointer).
-            return a == b;
+            // Tag types: compatible if same tag name.  A typedef alias for a
+            // struct/union/enum must be compatible with the tag type itself,
+            // e.g. `struct Block*` and `Block*` (via `typedef struct Block Block;`).
+            return a_base->name == b_base->name;
         case TypeKind::Pointer:
-            return types_compatible(a->pointee, b->pointee);
+            return types_compatible(a_base->pointee, b_base->pointee);
         case TypeKind::Reference:
-            return types_compatible(a->pointee, b->pointee);
+            return types_compatible(a_base->pointee, b_base->pointee);
         case TypeKind::RvalueReference:
-            return types_compatible(a->pointee, b->pointee);
+            return types_compatible(a_base->pointee, b_base->pointee);
         case TypeKind::InitializerList:
-            return types_compatible(a->pointee, b->pointee);
+            return types_compatible(a_base->pointee, b_base->pointee);
         case TypeKind::Array: {
-            if (a->array_length != b->array_length) return false;
-            return types_compatible(a->element_type, b->element_type);
+            if (a_base->array_length != b_base->array_length) return false;
+            return types_compatible(a_base->element_type, b_base->element_type);
         }
         case TypeKind::Function: {
-            if (a->is_variadic != b->is_variadic) return false;
-            if (!types_compatible(a->return_type, b->return_type)) return false;
-            if (a->param_types.size() != b->param_types.size()) return false;
-            for (std::size_t i = 0; i < a->param_types.size(); ++i) {
-                if (!types_compatible(a->param_types[i], b->param_types[i])) {
+            if (a_base->is_variadic != b_base->is_variadic) return false;
+            if (!types_compatible(a_base->return_type, b_base->return_type)) return false;
+            if (a_base->param_types.size() != b_base->param_types.size()) return false;
+            for (std::size_t i = 0; i < a_base->param_types.size(); ++i) {
+                if (!types_compatible(a_base->param_types[i], b_base->param_types[i])) {
                     return false;
                 }
             }
@@ -278,27 +333,27 @@ bool Sema::types_compatible(const std::shared_ptr<Type>& a,
         }
         case TypeKind::Typedef:
         case TypeKind::Incomplete:
-            return a == b;
+            return a_base == b_base;
         case TypeKind::TemplateParam:
             // Template parameters are compatible if they have the same name.
-            return a->template_param_name == b->template_param_name;
+            return a_base->template_param_name == b_base->template_param_name;
         case TypeKind::Auto:
         case TypeKind::Decltype:
             // Placeholder types are compatible only if they are the same
             // placeholder (same pointer).
-            return a == b;
+            return a_base == b_base;
         case TypeKind::Pair:
-            return types_compatible(a->pair_first_type, b->pair_first_type) &&
-                   types_compatible(a->pair_second_type, b->pair_second_type);
+            return types_compatible(a_base->pair_first_type, b_base->pair_first_type) &&
+                   types_compatible(a_base->pair_second_type, b_base->pair_second_type);
         case TypeKind::Tuple:
-            if (a->tuple_element_types.size() != b->tuple_element_types.size()) return false;
-            for (std::size_t i = 0; i < a->tuple_element_types.size(); ++i) {
-                if (!types_compatible(a->tuple_element_types[i], b->tuple_element_types[i])) return false;
+            if (a_base->tuple_element_types.size() != b_base->tuple_element_types.size()) return false;
+            for (std::size_t i = 0; i < a_base->tuple_element_types.size(); ++i) {
+                if (!types_compatible(a_base->tuple_element_types[i], b_base->tuple_element_types[i])) return false;
             }
             return true;
         case TypeKind::UniquePtr:
         case TypeKind::SharedPtr:
-            return types_compatible(a->smart_ptr_type, b->smart_ptr_type);
+            return types_compatible(a_base->smart_ptr_type, b_base->smart_ptr_type);
     }
     return false;
 }
@@ -406,6 +461,12 @@ bool Sema::check_assignment(const std::shared_ptr<Type>& left,
                             SourceLocation loc) const {
     if (!left || !right) return false;
 
+    // Resolve typedef wrappers on either side before comparing.
+    if (left->kind == TypeKind::Typedef && left->underlying)
+        return types_compatible(left->underlying, right);
+    if (right->kind == TypeKind::Typedef && right->underlying)
+        return types_compatible(left, right->underlying);
+
     // Same type is fine.
     if (types_compatible(left, right)) return true;
 
@@ -427,9 +488,12 @@ bool Sema::check_assignment(const std::shared_ptr<Type>& left,
     if (is_scalar_type(left) && is_integer_type(right) &&
         right->kind == TypeKind::Bool) return true;
 
-    // Pointer on left, null pointer constant (0) on right.
+    // Pointer on left, integer on right: only null pointer constant (0)
+    // is allowed, handled in type_assignment before this point.
     if (is_pointer_type(left) && is_integer_type(right)) {
-        return false; // only constant 0 allowed, checked at expression level
+        error(DiagnosticID{4002, "sema-error-assign"},
+              "incompatible types in assignment", loc);
+        return false;
     }
 
     error(DiagnosticID{4002, "sema-error-assign"},
@@ -604,6 +668,24 @@ bool Sema::walk_declaration(Declaration& decl) {
         }
     }
 
+    // Register enum enumerator constants as integer constant symbols.
+    if (decl.type && decl.type->kind == TypeKind::Enum && !decl.type->enumerators.empty()) {
+        for (auto& e : decl.type->enumerators) {
+            auto sym = std::make_shared<Symbol>();
+            sym->name = e->name;
+            sym->type = builtin_int_;
+            sym->is_definition = true;
+            sym->is_const = true;
+            sym->is_constant = true;
+            sym->int_value = e->value;
+            sym->location = e->location;
+            if (!file_scope_->insert(sym->name, sym)) {
+                return fail(DiagnosticID{4003, "sema-error-redefinition"},
+                            "redefinition of '" + sym->name + "'", e->location);
+            }
+        }
+    }
+
     // Register a named class/struct/enum type in file scope when no
     // declarator follows (a pure type definition, e.g. `class Foo { ... };`).
     if (decl.type && decl.declarators.empty() &&
@@ -625,9 +707,37 @@ bool Sema::walk_declaration(Declaration& decl) {
     // If this is a typedef, register the name.
     if (decl.is_typedef) {
         for (auto& d : decl.declarators) {
+            // Build the full type from the base type plus declarator
+            // modifiers (pointer, array, function), so that
+            // `typedef char* va_list;` gives va_list type Pointer(Char)
+            // rather than just Char.  This mirrors the type-building logic
+            // used for regular declarations below.
+            std::shared_ptr<Type> ty = decl.type;
+            while (ty->kind == TypeKind::Typedef && ty->underlying) {
+                ty = ty->underlying;
+            }
+            for (std::size_t i = 0; i < d->pointer_qualified.size(); ++i) {
+                ty = pointer_to(ty);
+            }
+            for (const auto& [size, is_vla] : d->array_sizes) {
+                ty = array_of(ty, size);
+            }
+            if (d->is_function) {
+                std::vector<std::shared_ptr<Type>> param_types;
+                if (!d->param_types.empty()) {
+                    param_types = d->param_types;
+                } else {
+                    for (const auto& pn : d->param_names) {
+                        (void)pn;
+                        param_types.push_back(builtin_int_);
+                    }
+                }
+                ty = function_type(ty, param_types, d->is_variadic);
+            }
+
             auto sym = std::make_shared<Symbol>();
             sym->name = d->name;
-            sym->type = decl.type;
+            sym->type = ty;
             sym->is_typedef = true;
             sym->storage = decl.storage;
             sym->is_definition = true;
@@ -648,7 +758,17 @@ bool Sema::walk_declaration(Declaration& decl) {
         // Build the full type for this declarator from the base type plus
         // declarator modifiers (pointer, array, function).
         std::shared_ptr<Type> ty = decl.type;
-        if (d->is_pointer) {
+        // Resolve typedef wrappers on the base type before applying
+        // declarator modifiers, so that `Block* p` (where Block is
+        // `typedef struct Block Block`) becomes Pointer(Struct) rather
+        // than Pointer(Typedef(Struct)).  This keeps the pointee type
+        // consistent with what lookup_member produces for struct members.
+        while (ty->kind == TypeKind::Typedef && ty->underlying) {
+            ty = ty->underlying;
+        }
+        // Apply one pointer_to per '*' in the declarator (e.g. `void**`
+        // becomes Pointer(Pointer(Void))).
+        for (std::size_t i = 0; i < d->pointer_qualified.size(); ++i) {
             ty = pointer_to(ty);
         }
         for (const auto& [size, is_vla] : d->array_sizes) {
@@ -714,7 +834,12 @@ bool Sema::walk_declaration(Declaration& decl) {
                     init_type = function_to_pointer_decay(init_type);
                 }
                 lvalue_to_rvalue(*init->expr);
-                if (!check_assignment(ty, init_type, init->expr->location)) {
+                // Null pointer constant: integer literal 0 can initialize any pointer.
+                if (is_pointer_type(ty) &&
+                    init->expr->kind == ExpressionKind::IntegerLiteral &&
+                    init->expr->int_value == 0) {
+                    // Allow null pointer constant initializer.
+                } else if (!check_assignment(ty, init_type, init->expr->location)) {
                     return false;
                 }
                 init->expr->is_lvalue = false; // not an lvalue after init
@@ -785,6 +910,13 @@ bool Sema::resolve_declarator_type(Declaration& decl) {
         base = builtin_int_; // C11: missing type specifiers defaults to int
         decl.type = base;
     }
+
+    // Resolve typedef types to their underlying type, following chains
+    // (e.g. `typedef int myint; typedef myint myint2;` resolves to int).
+    while (base->kind == TypeKind::Typedef && base->underlying) {
+        base = base->underlying;
+    }
+    decl.type = base;
 
     // M6: If the base type is `auto`, mark each declarator for deferred
     // type deduction. The actual type will be resolved from the
@@ -880,7 +1012,17 @@ bool Sema::check_function_definition(FunctionDef& fdef) {
                     param_types.push_back(builtin_int_);
                 }
             }
-            auto func_type = function_type(decl.type, param_types, d->is_variadic);
+            // Build the full return type from the base type plus declarator
+            // modifiers (pointer), so that `Block* f()` has return type
+            // Pointer(Struct(Block)) rather than Struct(Block).
+            std::shared_ptr<Type> ret_ty = decl.type;
+            while (ret_ty->kind == TypeKind::Typedef && ret_ty->underlying) {
+                ret_ty = ret_ty->underlying;
+            }
+            if (d->is_pointer) {
+                ret_ty = pointer_to(ret_ty);
+            }
+            auto func_type = function_type(ret_ty, param_types, d->is_variadic);
 
             auto sym = std::make_shared<Symbol>();
             sym->name = d->name;
@@ -905,15 +1047,52 @@ bool Sema::check_function_definition(FunctionDef& fdef) {
         // Create a new scope for the function body.
         push_scope();
 
+        // Set the current function return type so `return` statements can be
+        // validated against it. Build the full return type from the base type
+        // plus declarator modifiers (pointer, array), matching what
+        // walk_declaration() does for each declarator.
+        auto prev_return_type = current_function_return_type_;
+        std::shared_ptr<Type> ret_ty;
+        if (decl.type && decl.type->kind == TypeKind::Function) {
+            // decl.type may already be a Function type (e.g. in hand-built
+            // test ASTs); extract the return type from it.
+            ret_ty = decl.type->return_type;
+        } else {
+            ret_ty = decl.type;
+        }
+        while (ret_ty && ret_ty->kind == TypeKind::Typedef && ret_ty->underlying) {
+            ret_ty = ret_ty->underlying;
+        }
+        if (ret_ty && d->is_pointer) {
+            ret_ty = pointer_to(ret_ty);
+        }
+        for (const auto& [size, is_vla] : d->array_sizes) {
+            ret_ty = array_of(ret_ty, size);
+        }
+        current_function_return_type_ = ret_ty;
+
         // Register parameters in the function scope.
         if (d->is_function) {
-            for (const auto& pname : d->param_names) {
+            for (std::size_t i = 0; i < d->param_names.size(); ++i) {
                 auto sym = std::make_shared<Symbol>();
-                sym->name = pname;
-                sym->type = builtin_int_; // default param type
+                sym->name = d->param_names[i];
+                // Use the declared parameter type if available, fall back to int.
+                // Resolve typedef chains so that e.g. `size_t n` has the
+                // underlying integer type, not a Typedef wrapper.
+                std::shared_ptr<Type> param_type;
+                if (i < d->param_types.size() && d->param_types[i]) {
+                    param_type = d->param_types[i];
+                    while (param_type->kind == TypeKind::Typedef &&
+                           param_type->underlying) {
+                        param_type = param_type->underlying;
+                    }
+                } else {
+                    param_type = builtin_int_;
+                }
+                sym->type = param_type;
                 sym->storage = StorageClass::Auto;
                 sym->location = d->location;
-                insert_symbol(pname, sym);
+                insert_symbol(d->param_names[i], sym);
             }
         }
 
@@ -921,11 +1100,13 @@ bool Sema::check_function_definition(FunctionDef& fdef) {
         if (fdef.body) {
             if (!walk_statement(*fdef.body)) {
                 pop_scope();
+                current_function_return_type_ = prev_return_type;
                 return false;
             }
         }
 
         pop_scope();
+        current_function_return_type_ = prev_return_type;
     }
     return true;
 }
@@ -1101,6 +1282,21 @@ bool Sema::walk_statement(Statement& stmt) {
             if (stmt.return_value) {
                 if (!type_expression(*stmt.return_value)) return false;
                 lvalue_to_rvalue(*stmt.return_value);
+                if (current_function_return_type_) {
+                    // Null pointer constant: integer literal 0 can be
+                    // returned from any pointer-returning function.
+                    if (is_pointer_type(current_function_return_type_) &&
+                        stmt.return_value->kind == ExpressionKind::IntegerLiteral &&
+                        stmt.return_value->int_value == 0) {
+                        // Allow null pointer constant return.
+                    } else if (!check_assignment(current_function_return_type_,
+                                                 stmt.return_value->type,
+                                                 stmt.location)) {
+                        return fail(
+                            DiagnosticID{4005, "sema-error-return"},
+                            "incompatible types in return", stmt.location);
+                    }
+                }
             }
             return true;
         }
@@ -1157,6 +1353,9 @@ bool Sema::type_expression(Expression& expr) {
             return type_delete(expr);
         case ExpressionKind::IntegerLiteral:
             return type_integer_literal(expr);
+        case ExpressionKind::BooleanLiteral:
+            expr.type = bool_type();
+            return true;
         case ExpressionKind::FloatingLiteral:
             return type_floating_literal(expr);
         case ExpressionKind::CharLiteral:
@@ -1196,6 +1395,8 @@ bool Sema::type_expression(Expression& expr) {
             return type_throw(expr);
         case ExpressionKind::Typeid:
             return type_typeid(expr);
+        case ExpressionKind::VaArg:
+            return type_va_arg(expr);
         default:
             // Unknown expression kind — untyped.
             return true;
@@ -1450,6 +1651,28 @@ bool Sema::type_typeid(Expression& expr) {
     return true;
 }
 
+bool Sema::type_va_arg(Expression& expr) {
+    // __builtin_va_arg(ap, type) — ap must be a va_list (char*),
+    // the result has the given type.
+    if (!expr.va_arg_list) {
+        return fail(DiagnosticID{4019, "sema-error-va-arg"},
+                    "__builtin_va_arg: missing va_list argument",
+                    expr.location);
+    }
+    if (!type_expression(*expr.va_arg_list)) return false;
+    lvalue_to_rvalue(*expr.va_arg_list);
+
+    if (!expr.va_arg_type) {
+        return fail(DiagnosticID{4019, "sema-error-va-arg"},
+                    "__builtin_va_arg: missing type argument",
+                    expr.location);
+    }
+
+    expr.type = expr.va_arg_type;
+    expr.is_lvalue = false;
+    return true;
+}
+
 bool Sema::type_unary(Expression& expr) {
     if (!type_expression(*expr.unary_operand)) return false;
 
@@ -1641,12 +1864,12 @@ bool Sema::type_binary(Expression& expr) {
             lvalue_to_rvalue(*expr.binary_right);
 
             if (is_pointer_type(lt) && is_integer_type(rt)) {
-                expr.type = lt->pointee;
+                expr.type = lt;  // pointer + int = pointer, not pointee
                 expr.is_lvalue = true;
                 return true;
             }
             if (is_integer_type(lt) && is_pointer_type(rt)) {
-                expr.type = rt->pointee;
+                expr.type = rt;  // int + pointer = pointer, not pointee
                 expr.is_lvalue = true;
                 return true;
             }
@@ -1665,7 +1888,22 @@ bool Sema::type_binary(Expression& expr) {
                         "invalid operands to binary + or -", expr.location);
         }
         case BinaryOp::Mul:
-        case BinaryOp::Div:
+        case BinaryOp::Div: {
+            // Multiplication and division work on both integer and floating types.
+            if (!is_arithmetic_type(expr.binary_left->type) ||
+                !is_arithmetic_type(expr.binary_right->type)) {
+                return fail(DiagnosticID{4006, "sema-error-binary"},
+                            "binary operator requires arithmetic operands",
+                            expr.location);
+            }
+            lvalue_to_rvalue(*expr.binary_left);
+            lvalue_to_rvalue(*expr.binary_right);
+            auto l = integer_promotion(expr.binary_left->type);
+            auto r = integer_promotion(expr.binary_right->type);
+            expr.type = usual_arithmetic_conversions(l, r);
+            expr.is_lvalue = false;
+            return true;
+        }
         case BinaryOp::Rem:
         case BinaryOp::Shl:
         case BinaryOp::Shr: {
@@ -1699,6 +1937,20 @@ bool Sema::type_assignment(Expression& expr) {
     auto left_type = expr.assign_left->type;
     auto right_type = expr.assign_right->type;
 
+    // For compound assignment (d += n), the effective operation is d = d + n.
+    // The right type must be the result of pointer+int arithmetic, not just n.
+    if (expr.kind == ExpressionKind::Assignment &&
+        (expr.assign_op == AssignmentOp::AddAssign ||
+         expr.assign_op == AssignmentOp::SubAssign)) {
+        if (is_pointer_type(left_type) && is_integer_type(right_type)) {
+            right_type = left_type; // pointer + int = pointer
+        } else if (is_integer_type(left_type) && is_pointer_type(right_type)) {
+            // int + pointer = pointer; right_type is already the pointer type.
+        } else if (is_arithmetic_type(left_type) && is_arithmetic_type(right_type)) {
+            right_type = usual_arithmetic_conversions(left_type, right_type);
+        }
+    }
+
     // Array-to-pointer decay on the right.
     if (is_array_type(right_type)) {
         right_type = array_to_pointer_decay(right_type);
@@ -1709,7 +1961,12 @@ bool Sema::type_assignment(Expression& expr) {
 
     lvalue_to_rvalue(*expr.assign_right);
 
-    if (!check_assignment(left_type, right_type, expr.location)) {
+    // Null pointer constant: integer literal 0 can be assigned to any pointer.
+    if (is_pointer_type(left_type) &&
+        expr.assign_right->kind == ExpressionKind::IntegerLiteral &&
+        expr.assign_right->int_value == 0) {
+        // Allow null pointer constant assignment.
+    } else if (!check_assignment(left_type, right_type, expr.location)) {
         return false;
     }
 
@@ -1747,7 +2004,14 @@ bool Sema::type_cast(Expression& expr) {
     }
     if (!type_expression(*expr.cast_operand)) return false;
     lvalue_to_rvalue(*expr.cast_operand);
-    expr.type = expr.cast_type;
+    // Resolve typedef chains so the cast result has the underlying type,
+    // not a Typedef wrapper (e.g. `(size_t)-1` should have type Int, not
+    // Typedef(Int)).
+    std::shared_ptr<Type> cast_type = expr.cast_type;
+    while (cast_type->kind == TypeKind::Typedef && cast_type->underlying) {
+        cast_type = cast_type->underlying;
+    }
+    expr.type = cast_type;
     expr.is_lvalue = false;
     return true;
 }
@@ -1925,19 +2189,49 @@ bool Sema::type_function_call(Expression& expr) {
             }
             expr.callee->type = func_candidates[best]->type;
         } else if (func_candidates.size() == 1 && !is_template_call) {
-            // Single candidate: type the callee to get its function type.
+            // Single candidate: type the callee and all arguments.
             if (!type_expression(*expr.callee)) return false;
+            for (auto& arg : expr.call_args) {
+                if (!type_expression(*arg)) return false;
+                lvalue_to_rvalue(*arg);
+            }
+            expr.callee->type = func_candidates[0]->type;
         }
     }
 
     if (expr.callee && !is_template_call && !expr.callee->type) {
-        if (!type_expression(*expr.callee)) return false;
+        // Builtin function: `__atomic_*` used by libc (e.g. __atomic_compare_exchange_n).
+        // Provide a generic variadic builtin type so these calls type-check.
+        if (expr.callee->kind == ExpressionKind::Identifier &&
+            expr.callee->identifier_name.rfind("__atomic", 0) == 0) {
+            auto func_type = std::make_shared<Type>();
+            func_type->kind = TypeKind::Function;
+            func_type->return_type = builtin_int_;
+            std::vector<std::shared_ptr<Type>> param_types;
+            for (std::size_t i = 0; i < expr.call_args.size(); ++i) {
+                param_types.push_back(builtin_int_);
+            }
+            func_type->param_types = param_types;
+            func_type->is_variadic = true;
+            expr.callee->type = func_type;
+        } else {
+            if (!type_expression(*expr.callee)) return false;
+        }
     }
 
     auto callee_type = expr.callee ? expr.callee->type : nullptr;
     if (callee_type && is_function_type(callee_type)) {
         // Validate argument count against parameter count.
-        if (callee_type->param_types.size() != expr.call_args.size()) {
+        // Variadic functions may have more arguments than fixed parameters.
+        if (!callee_type->is_variadic &&
+            callee_type->param_types.size() != expr.call_args.size()) {
+            return fail(DiagnosticID{4008, "sema-error-call"},
+                "wrong number of arguments in call to '" +
+                    (expr.callee ? expr.callee->identifier_name : "") + "'",
+                expr.location);
+        }
+        if (callee_type->is_variadic &&
+            callee_type->param_types.size() > expr.call_args.size()) {
             return fail(DiagnosticID{4008, "sema-error-call"},
                 "wrong number of arguments in call to '" +
                     (expr.callee ? expr.callee->identifier_name : "") + "'",
@@ -1947,7 +2241,16 @@ bool Sema::type_function_call(Expression& expr) {
         lvalue_to_rvalue(*expr.callee);
     } else if (callee_type && is_pointer_type(callee_type) &&
                is_function_type(callee_type->pointee)) {
-        if (callee_type->pointee->param_types.size() !=
+        if (!callee_type->pointee->is_variadic &&
+            callee_type->pointee->param_types.size() !=
+            expr.call_args.size()) {
+            return fail(DiagnosticID{4008, "sema-error-call"},
+                "wrong number of arguments in call to '" +
+                    (expr.callee ? expr.callee->identifier_name : "") + "'",
+                expr.location);
+        }
+        if (callee_type->pointee->is_variadic &&
+            callee_type->pointee->param_types.size() >
             expr.call_args.size()) {
             return fail(DiagnosticID{4008, "sema-error-call"},
                 "wrong number of arguments in call to '" +
@@ -1962,10 +2265,34 @@ bool Sema::type_function_call(Expression& expr) {
 
     // Check argument types against parameter types.
     if (callee_type && is_function_type(callee_type)) {
+        // __atomic_* builtins have special pointer-typed parameters; skip
+        // argument type checking for them.
+        bool is_atomic_builtin = expr.callee && expr.callee->kind == ExpressionKind::Identifier &&
+                                 expr.callee->identifier_name.rfind("__atomic", 0) == 0;
         for (std::size_t i = 0; i < expr.call_args.size(); ++i) {
             if (i < callee_type->param_types.size()) {
-                if (!types_compatible(callee_type->param_types[i],
-                                      expr.call_args[i]->type)) {
+                if (is_atomic_builtin) continue;
+                auto param_type = callee_type->param_types[i];
+                auto arg_type = expr.call_args[i]->type;
+                bool ok = types_compatible(param_type, arg_type);
+                // Null pointer constant: integer literal 0 can be passed to any pointer parameter.
+                if (!ok && is_pointer_type(param_type) &&
+                    expr.call_args[i]->kind == ExpressionKind::IntegerLiteral &&
+                    expr.call_args[i]->int_value == 0) {
+                    ok = true;
+                }
+                // void* is compatible with any object pointer (and vice versa).
+                if (!ok && is_pointer_type(param_type) && is_pointer_type(arg_type)) {
+                    if (is_void_type(param_type->pointee) ||
+                        is_void_type(arg_type->pointee)) {
+                        ok = true;
+                    }
+                }
+                // Implicit arithmetic conversion (e.g. char → int argument).
+                if (!ok && is_arithmetic_type(param_type) && is_arithmetic_type(arg_type)) {
+                    ok = true;
+                }
+                if (!ok) {
                     return fail(
                         DiagnosticID{4008, "sema-error-call"},
                         "argument " + std::to_string(i + 1) +
@@ -1995,12 +2322,17 @@ bool Sema::type_member_access(Expression& expr) {
         base_type = function_to_pointer_decay(base_type);
     }
 
+    // Resolve through typedefs so that `Block* curr` (where Block is a
+    // typedef) is treated as a pointer type.
+    base_type = resolve_typedef(base_type);
+
     if (is_pointer_type(base_type)) {
         // ptr->member: the pointee should be a struct/union.
-        if (base_type->pointee &&
-            (base_type->pointee->kind == TypeKind::Struct ||
-             base_type->pointee->kind == TypeKind::Union)) {
-            auto member = lookup_member(base_type->pointee, expr.member_name);
+        auto pointee = resolve_typedef(base_type->pointee);
+        if (pointee &&
+            (pointee->kind == TypeKind::Struct ||
+             pointee->kind == TypeKind::Union)) {
+            auto member = lookup_member(pointee, expr.member_name);
             if (!member) {
                 return fail(DiagnosticID{4009, "sema-error-member"},
                             "no member '" + expr.member_name + "' in class",

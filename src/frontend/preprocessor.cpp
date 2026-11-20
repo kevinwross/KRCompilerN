@@ -244,10 +244,13 @@ bool Preprocessor::is_macro_defined(std::string_view name) const {
     if (it == macros_.end()) {
         // Predefined macros are always defined.
         if (name == "__FILE__" || name == "__LINE__" || name == "__COUNTER__" ||
-            name == "__KR32__" || name == "__KR16__" || name == "__KR64__" ||
             name == "__STDC_VERSION__" || name == "__cplusplus") {
             return true;
         }
+        // Target macros are defined only for the active target.
+        if (name == "__KR32__" && target_ == "kr32") return true;
+        if (name == "__KR16__" && target_ == "kr16") return true;
+        if (name == "__KR64__" && target_ == "kr64") return true;
         return false;
     }
     return it->second.is_defined;
@@ -397,6 +400,8 @@ void Preprocessor::handle_define() {
     std::string name = std::string(result.token.text);
 
     // Check if followed by '(' (function-like).
+    // Per C11 6.10.3: if there's whitespace between the macro name and '(',
+    // it's an object-like macro, not function-like.
     LexResult peek_result = read_token();
     if (!peek_result.ok) {
         return;
@@ -406,30 +411,39 @@ void Preprocessor::handle_define() {
     macro.name = name;
 
     if (peek_result.token.kind == TokenKind::LParen) {
-        macro.is_function_like = true;
-        // Parse parameter list until ')'.
-        while (true) {
-            LexResult p_result = read_token();
-            if (!p_result.ok) break;
-            if (p_result.token.kind == TokenKind::RParen) break;
-            if (p_result.token.kind == TokenKind::Ellipsis) {
-                macro.is_variadic = true;
-                // __VA_ARGS__ is the variadic parameter name.
-                macro.params.push_back("__VA_ARGS__");
-                // Expect ')' next.
-                LexResult rp = read_token();
-                (void)rp;
-                break;
+        // Check for whitespace between name and '(' — if present, object-like.
+        std::uint64_t name_end = result.token.location.offset + result.token.text.length();
+        bool no_whitespace = (name_end == peek_result.token.location.offset);
+
+        if (no_whitespace) {
+            macro.is_function_like = true;
+            // Parse parameter list until ')'.
+            while (true) {
+                LexResult p_result = read_token();
+                if (!p_result.ok) break;
+                if (p_result.token.kind == TokenKind::RParen) break;
+                if (p_result.token.kind == TokenKind::Ellipsis) {
+                    macro.is_variadic = true;
+                    // __VA_ARGS__ is the variadic parameter name.
+                    macro.params.push_back("__VA_ARGS__");
+                    // Expect ')' next.
+                    LexResult rp = read_token();
+                    (void)rp;
+                    break;
+                }
+                if (p_result.token.kind == TokenKind::Identifier) {
+                    macro.params.push_back(std::string(p_result.token.text));
+                }
+                LexResult comma = read_token();
+                if (!comma.ok || comma.token.kind != TokenKind::Comma) {
+                    // If it's ')', we're done; otherwise break.
+                    if (comma.token.kind == TokenKind::RParen) break;
+                    break;
+                }
             }
-            if (p_result.token.kind == TokenKind::Identifier) {
-                macro.params.push_back(std::string(p_result.token.text));
-            }
-            LexResult comma = read_token();
-            if (!comma.ok || comma.token.kind != TokenKind::Comma) {
-                // If it's ')', we're done; otherwise break.
-                if (comma.token.kind == TokenKind::RParen) break;
-                break;
-            }
+        } else {
+            // Object-like: the '(' starts the replacement list.
+            push_back(peek_result.token);
         }
     } else {
         // Object-like: the peeked token starts the replacement list.
@@ -902,7 +916,24 @@ bool Preprocessor::handle_predefined_macro(const Token& tok) {
     }
 
     // Predefined target macros (plan.md §4.2 / target_descriptor.h).
-    if (name == "__KR32__" || name == "__KR16__" || name == "__KR64__") {
+    // Only the macro matching the active target is defined.
+    if (name == "__KR32__" && target_ == "kr32") {
+        queued_tokens_.clear();
+        string_storage_.push_back("1");
+        Token t{TokenKind::IntegerLiteral, tok.location, string_storage_.back(),
+                string_storage_.back().size()};
+        queued_tokens_.push_back(std::move(t));
+        return true;
+    }
+    if (name == "__KR16__" && target_ == "kr16") {
+        queued_tokens_.clear();
+        string_storage_.push_back("1");
+        Token t{TokenKind::IntegerLiteral, tok.location, string_storage_.back(),
+                string_storage_.back().size()};
+        queued_tokens_.push_back(std::move(t));
+        return true;
+    }
+    if (name == "__KR64__" && target_ == "kr64") {
         queued_tokens_.clear();
         string_storage_.push_back("1");
         Token t{TokenKind::IntegerLiteral, tok.location, string_storage_.back(),

@@ -49,7 +49,7 @@ enum class TypeKind : std::uint8_t {
 
 struct Type : AstNode {
     TypeKind kind = TypeKind::Void;
-    std::string_view name;
+    std::string name;
     std::uint32_t size = 0;
     std::uint32_t align = 0;
     std::shared_ptr<Type> pointee;
@@ -79,6 +79,8 @@ struct Type : AstNode {
     std::uint32_t vptr_offset = 0;    // byte offset of the hidden vptr member
     std::vector<std::shared_ptr<Declaration>> virtual_functions;  // ordered vtable entries
     std::uint32_t vtable_size = 0;    // number of vtable entries
+    // Enum enumerators (name -> value).
+    std::vector<std::shared_ptr<Enumerator>> enumerators;
 };
 
 // Template parameter: `typename T`, `class T`, or `int N`.
@@ -121,6 +123,7 @@ std::shared_ptr<Type> short_type();
 std::shared_ptr<Type> int_type();
 std::shared_ptr<Type> long_type();
 std::shared_ptr<Type> long_long_type();
+std::shared_ptr<Type> unsigned_type();
 std::shared_ptr<Type> float_type();
 std::shared_ptr<Type> double_type();
 std::shared_ptr<Type> auto_type();   // M6: `auto` placeholder type
@@ -128,6 +131,8 @@ std::shared_ptr<Type> decltype_type(); // M6: `decltype` placeholder type
 
 struct Declarator : AstNode {
     std::string name;
+    // Number of pointer levels (e.g. 2 for `void**`).  Tracked via
+    // pointer_qualified size: each '*' pushes one entry.
     bool is_pointer = false;
     std::vector<bool> pointer_qualified;
     std::vector<std::pair<std::uint64_t, bool>> array_sizes;
@@ -253,14 +258,14 @@ struct Statement : AstNode {
 };
 
 enum class ExpressionKind : std::uint8_t {
-    IntegerLiteral, FloatingLiteral, CharLiteral, StringLiteral,
+    IntegerLiteral, FloatingLiteral, CharLiteral, StringLiteral, BooleanLiteral,
     Identifier, This, FunctionCall, Unary, Binary, Conditional, Assignment,
     Cast, SizeofExpr, SizeofType, MemberAccess, ArraySubscript,
     CompoundLiteral, StatementExpr, StringLiteralConcat,
     New, Delete,
     Lambda, Move, Forward,
     FoldExpression,  // M10: C++17 fold expression (pack op ...)
-    Throw, Typeid,   // M10: C++ exception handling and RTTI
+    Throw, Typeid, VaArg,  // M10: C++ exception handling and RTTI; va_arg builtin
 };
 
 enum class UnaryOp : std::uint8_t {
@@ -301,6 +306,7 @@ struct Expression : AstNode {
     bool is_lvalue = false;
     bool is_constant = false;
     std::int64_t int_value = 0;
+    bool bool_value = false;
     std::string identifier_name;
     std::string string_value;
     char char_value = 0;
@@ -368,6 +374,9 @@ struct Expression : AstNode {
     std::shared_ptr<Type> typeid_type;
     std::shared_ptr<Expression> typeid_expr;
     bool typeid_is_type = false;  // true if typeid(T), false if typeid(expr)
+    // For ExpressionKind::VaArg: __builtin_va_arg(ap, type).
+    std::shared_ptr<Expression> va_arg_list;
+    std::shared_ptr<Type> va_arg_type;
 };
 
 struct FunctionDef : AstNode {

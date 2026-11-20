@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace krc {
@@ -164,6 +165,14 @@ private:
     Preprocessor& preprocessor_;
     DiagnosticEngine& diagnostics_;
     std::shared_ptr<Statement> pending_structured_binding_;
+    // Maps typedef names to their underlying types (e.g. "myint" -> int).
+    // Populated when parsing `typedef` declarations; consulted by
+    // `parse_type_specifier()` to recognize typedef names as type specifiers.
+    std::unordered_map<std::string, std::shared_ptr<Type>> typedef_types_;
+    // Maps struct/union tag names to their types.  Populated when a struct
+    // or union is defined with a body; consulted by `parse_struct_or_union()`
+    // when a tag is referenced without a body (e.g. `typedef struct foo FILE;`).
+    std::unordered_map<std::string, std::shared_ptr<Type>> struct_tags_;
 };
 
 } // namespace krc

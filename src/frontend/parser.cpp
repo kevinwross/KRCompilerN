@@ -1,5 +1,6 @@
 #include "parser.h"
 
+#include <cstdio>
 #include <string_view>
 
 namespace krc {
@@ -227,6 +228,48 @@ std::shared_ptr<Declaration> Parser::parse_external_declaration() {
     decl->type = base_type;
     decl->declarators.push_back(declarator);
 
+    // Register typedef names so they can be recognized as type specifiers
+    // in subsequent declarations (e.g. `typedef int myint;` then `myint x;`).
+    // Build the full type including declarator modifiers (pointer, array)
+    // so that `typedef char* va_list;` makes va_list resolve to Pointer(Char)
+    // rather than just Char.
+    if (is_typedef) {
+        for (auto& d : decl->declarators) {
+            std::shared_ptr<Type> full_type = base_type;
+            // Resolve any typedef wrappers on the base type.
+            while (full_type->kind == TypeKind::Typedef && full_type->underlying) {
+                full_type = full_type->underlying;
+            }
+            // Apply function declarator first (e.g. `int (*f)(int)` →
+            // Pointer(Function(Int, [Int])), not Function(Pointer(Int), [Int])).
+            if (d->is_function) {
+                auto func_type = std::make_shared<Type>();
+                func_type->kind = TypeKind::Function;
+                func_type->return_type = full_type;
+                func_type->param_types = d->param_types;
+                func_type->is_variadic = d->is_variadic;
+                full_type = func_type;
+            }
+            // Apply pointer declarators (one per '*').
+            for (std::size_t i = 0; i < d->pointer_qualified.size(); ++i) {
+                auto ptr_type = std::make_shared<Type>();
+                ptr_type->kind = TypeKind::Pointer;
+                ptr_type->pointee = full_type;
+                full_type = ptr_type;
+            }
+            // Apply array declarators.
+            for (const auto& [size, is_vla] : d->array_sizes) {
+                auto arr_type = std::make_shared<Type>();
+                arr_type->kind = TypeKind::Array;
+                arr_type->element_type = full_type;
+                arr_type->array_length = size;
+                arr_type->is_vla = is_vla;
+                full_type = arr_type;
+            }
+            typedef_types_[std::string(d->name)] = full_type;
+        }
+    }
+
     if (consume(TokenKind::Eq)) {
         auto init = parse_initializer();
         if (init) {
@@ -403,6 +446,7 @@ std::shared_ptr<Type> Parser::parse_declaration_specifiers(
 
     std::shared_ptr<Type> type;
     bool saw_type_specifier = false;
+    TokenKind first_type_kind = TokenKind::Invalid;
     is_constexpr = false;
 
     while (true) {
@@ -481,7 +525,7 @@ std::shared_ptr<Type> Parser::parse_declaration_specifiers(
             if (saw_type_specifier) {
                 // Combine multiple type specifiers (e.g. "long long",
                 // "unsigned int", "signed char").
-                auto combined = combine_type_specifiers(kind);
+                auto combined = combine_type_specifiers(first_type_kind);
                 if (combined) {
                     type = combined;
                 } else {
@@ -491,8 +535,14 @@ std::shared_ptr<Type> Parser::parse_declaration_specifiers(
                 }
             } else {
                 type = parse_type_specifier();
+                first_type_kind = kind;
                 saw_type_specifier = true;
             }
+        } else if (kind == TokenKind::Identifier &&
+                   typedef_types_.contains(std::string(current().text))) {
+            // Typedef name used as a type specifier.
+            type = parse_type_specifier();
+            saw_type_specifier = true;
         } else {
             break;
         }
@@ -560,6 +610,7 @@ std::shared_ptr<Type> Parser::parse_type_specifier() {
             advance();
             return void_type();
         case TokenKind::KwBool:
+        case TokenKind::KwBoolCpp:
             advance();
             return bool_type();
         case TokenKind::KwChar:
@@ -574,6 +625,12 @@ std::shared_ptr<Type> Parser::parse_type_specifier() {
         case TokenKind::KwLong:
             advance();
             return long_type();
+        case TokenKind::KwUnsigned:
+            advance();
+            return unsigned_type();
+        case TokenKind::KwSigned:
+            advance();
+            return int_type();
         case TokenKind::KwFloat:
             advance();
             return float_type();
@@ -613,6 +670,16 @@ std::shared_ptr<Type> Parser::parse_type_specifier() {
         default:
             if (kind == TokenKind::Identifier) {
                 std::string type_name = std::string(current().text);
+                // Typedef name — resolved from the parser's typedef registry.
+                auto it = typedef_types_.find(type_name);
+                if (it != typedef_types_.end()) {
+                    advance();
+                    auto t = std::make_shared<Type>();
+                    t->kind = TypeKind::Typedef;
+                    t->name = type_name;
+                    t->underlying = it->second;
+                    return t;
+                }
                 // M10: pair<T, U> — std::pair type syntax.
                 if (type_name == "pair" && peek().kind == TokenKind::Less) {
                     advance();  // consume 'pair'
@@ -712,50 +779,90 @@ std::shared_ptr<Type> Parser::parse_struct_or_union() {
     TypeKind type_kind = (kind == TokenKind::KwStruct) ? TypeKind::Struct
                                                        : TypeKind::Union;
 
-    auto type = std::make_shared<Type>();
-    type->kind = type_kind;
-
     // Optional tag.
+    std::string tag_name;
     if (current().kind == TokenKind::Identifier) {
-        type->name = current().text; // string_view into source buffer
+        tag_name = std::string(current().text); // string_view into source buffer
         advance();
     }
 
-    if (consume(TokenKind::LBrace)) {
-        while (!at_eof() && current().kind != TokenKind::RBrace) {
-            // struct-declaration: specifier-qualifier-list declarator-list ';'
-            StorageClass storage = StorageClass::None;
-            Linkage linkage = Linkage::None;
-            bool is_typedef = false, is_extern = false, is_static = false;
-            bool is_const = false, is_volatile = false, is_restrict = false;
-            bool is_inline = false, is_noreturn = false;
-            bool is_noexcept = false, is_constexpr = false, has_alignas = false;
-
-            auto member_type = parse_declaration_specifiers(
-                storage, linkage, is_typedef, is_extern, is_static, is_const,
-                is_volatile, is_restrict, is_inline, is_noreturn,
-                is_noexcept, is_constexpr, has_alignas);
-            if (!member_type)
-                break;
-
-            while (true) {
-                auto member_decl = std::make_shared<Declaration>();
-                member_decl->type = member_type;
-                auto declarator = parse_declarator();
-                if (declarator)
-                    member_decl->declarators.push_back(declarator);
-                // Optional bitfield: ':' constant-expression
-                if (consume(TokenKind::Colon)) {
-                    (void)parse_assignment_expression();
-                }
-                type->members.push_back(member_decl);
-                if (!consume(TokenKind::Comma))
-                    break;
+    // If there is no body, this is a reference to an existing struct/union
+    // tag (e.g. `typedef struct kr32_file FILE;`).  Look it up and return
+    // the existing type so that member access via the typedef works.
+    if (!consume(TokenKind::LBrace)) {
+        if (!tag_name.empty()) {
+            auto it = struct_tags_.find(tag_name);
+            if (it != struct_tags_.end()) {
+                return it->second;
             }
-
-            expect(TokenKind::Semicolon);
+            // Forward reference: create an incomplete struct type and
+            // register it so subsequent references find it.
+            auto type = std::make_shared<Type>();
+            type->kind = type_kind;
+            type->name = tag_name;
+            struct_tags_[tag_name] = type;
+            return type;
         }
-        expect(TokenKind::RBrace);
+        // No tag and no body — not valid, but return void to avoid cascading
+        // errors.
+        error("expected '{' in struct/union definition");
+        return void_type();
+    }
+
+    auto type = std::make_shared<Type>();
+    type->kind = type_kind;
+    if (!tag_name.empty()) {
+        type->name = tag_name;
+    }
+
+    while (!at_eof() && current().kind != TokenKind::RBrace) {
+        // struct-declaration: specifier-qualifier-list declarator-list ';'
+        StorageClass storage = StorageClass::None;
+        Linkage linkage = Linkage::None;
+        bool is_typedef = false, is_extern = false, is_static = false;
+        bool is_const = false, is_volatile = false, is_restrict = false;
+        bool is_inline = false, is_noreturn = false;
+        bool is_noexcept = false, is_constexpr = false, has_alignas = false;
+
+        auto member_type = parse_declaration_specifiers(
+            storage, linkage, is_typedef, is_extern, is_static, is_const,
+            is_volatile, is_restrict, is_inline, is_noreturn,
+            is_noexcept, is_constexpr, has_alignas);
+        if (!member_type)
+            break;
+
+        while (true) {
+            auto member_decl = std::make_shared<Declaration>();
+            member_decl->type = member_type;
+            auto declarator = parse_declarator();
+            if (declarator)
+                member_decl->declarators.push_back(declarator);
+            // Optional bitfield: ':' constant-expression
+            if (consume(TokenKind::Colon)) {
+                (void)parse_assignment_expression();
+            }
+            type->members.push_back(member_decl);
+            if (!consume(TokenKind::Comma))
+                break;
+        }
+
+        expect(TokenKind::Semicolon);
+    }
+    expect(TokenKind::RBrace);
+
+    // Register the defined struct/union by tag so subsequent references
+    // (e.g. `typedef struct kr32_file FILE;`) find the full type with members.
+    if (!tag_name.empty()) {
+        struct_tags_[tag_name] = type;
+        // Update any typedef that referred to the incomplete version of this
+        // struct/union so it now points to the complete type. This handles the
+        // common pattern `typedef struct FILE FILE;` followed by
+        // `struct FILE { ... };`.
+        for (auto& [name, ty] : typedef_types_) {
+            if (ty->kind == type_kind && ty->name == tag_name && ty->members.empty()) {
+                ty = type;
+            }
+        }
     }
 
     return type;
@@ -923,8 +1030,46 @@ std::shared_ptr<Type> Parser::parse_enum_specifier() {
     }
 
     if (consume(TokenKind::LBrace)) {
+        int64_t next_value = 0;
         while (!at_eof() && current().kind != TokenKind::RBrace) {
-            (void)parse_assignment_expression(); // enumerator value (placeholder)
+            // Enumerator name.
+            if (current().kind != TokenKind::Identifier) {
+                error("expected enumerator name");
+                return type;
+            }
+            std::string enum_name(std::string(current().text));
+            SourceLocation enum_loc = current().location;
+            advance();
+
+            auto enumerator = std::make_shared<Enumerator>();
+            enumerator->name = enum_name;
+            enumerator->location = enum_loc;
+
+            // Optional explicit value: `= value`.
+            if (consume(TokenKind::Eq)) {
+                auto value_expr = parse_assignment_expression();
+                if (!value_expr) {
+                    error("expected enumerator value after '='");
+                    return type;
+                }
+                // The value should be a constant integer expression.
+                if (value_expr->kind == ExpressionKind::IntegerLiteral) {
+                    enumerator->value = value_expr->int_value;
+                    enumerator->has_explicit_value = true;
+                    next_value = enumerator->value + 1;
+                } else {
+                    // Non-constant expression: treat as 0 for now.
+                    enumerator->value = next_value;
+                    next_value = next_value + 1;
+                }
+            } else {
+                enumerator->value = next_value;
+                enumerator->has_explicit_value = false;
+                next_value = next_value + 1;
+            }
+
+            type->enumerators.push_back(enumerator);
+
             if (!consume(TokenKind::Comma))
                 break;
         }
@@ -958,9 +1103,11 @@ std::shared_ptr<Declarator> Parser::parse_declarator() {
     auto decl = std::make_shared<Declarator>();
     decl->location = current().location;
 
-    // pointer?
-    if (consume(TokenKind::Star)) {
+    // pointer? (handle chains like `void**`)
+    decl->is_pointer = false;
+    while (consume(TokenKind::Star)) {
         decl->is_pointer = true;
+        decl->pointer_qualified.push_back(false);
         while (is_type_qualifier_kind(current().kind)) {
             advance();
         }
@@ -970,9 +1117,13 @@ std::shared_ptr<Declarator> Parser::parse_declarator() {
     if (current().kind == TokenKind::LParen) {
         // '(' declarator ')'
         advance();
-        (void)parse_declarator();
+        auto inner = parse_declarator();
+        if (inner) decl->name = inner->name;  // Propagate name from parenthesized declarator
         expect(TokenKind::RParen);
-    } else if (current().kind == TokenKind::Identifier) {
+    } else if (current().kind == TokenKind::Identifier ||
+               current().kind == TokenKind::KwWcharT) {
+        // KwWcharT is a C++ keyword but in C (and in C stddef.h) it is a
+        // typedef target, so accept it as a declarator name here.
         decl->name = current().text;
         advance();
     } else {
@@ -992,10 +1143,28 @@ std::shared_ptr<Declarator> Parser::parse_declarator() {
         } else if (consume(TokenKind::LParen)) {
             decl->is_function = true;
             // Handle "void" parameter list (no parameters).
+            // C11 6.7.6.3: "void" as the only parameter specifies an empty
+            // parameter list.  peek() is not reliable lookahead, so consume
+            // 'void' first and check if ')' follows.
+            bool saw_void_param = false;
             if (current().kind == TokenKind::KwVoid) {
-                advance();
-                expect(TokenKind::RParen);
-            } else {
+                Token void_tok = current();
+                advance(); // consume 'void'
+                if (current().kind == TokenKind::RParen) {
+                    // `f(void)` — empty parameter list, 'void' already consumed.
+                    saw_void_param = true;
+                } else {
+                    // 'void' is a real parameter type (e.g. `void*`).
+                    // push_back is LIFO: push the token after void first,
+                    // then void, so re-advancing yields void first.
+                    Token following_tok = current();
+                    preprocessor_.push_back(following_tok);
+                    preprocessor_.push_back(void_tok);
+                    advance(); // re-consume pushed-back 'void' to refresh current()
+                }
+            }
+
+            if (!saw_void_param) {
                 while (!at_eof() && current().kind != TokenKind::RParen) {
                     if (current().kind == TokenKind::Ellipsis) {
                         decl->is_variadic = true;
@@ -1013,6 +1182,13 @@ std::shared_ptr<Declarator> Parser::parse_declarator() {
                         p_storage, p_linkage, p_typedef, p_extern, p_static,
                         p_const, p_volatile, p_restrict, p_inline, p_noreturn,
                         p_noexcept, p_constexpr, p_has_alignas);
+                    // Consume pointer declarators (e.g. `void*` in a parameter).
+                    while (consume(TokenKind::Star)) {
+                        auto ptr_type = std::make_shared<Type>();
+                        ptr_type->kind = TypeKind::Pointer;
+                        ptr_type->pointee = param_type;
+                        param_type = ptr_type;
+                    }
                     decl->param_types.push_back(
                         param_type ? param_type : int_type());
                     // Capture the parameter name (identifier).
@@ -1030,13 +1206,12 @@ std::shared_ptr<Declarator> Parser::parse_declarator() {
                     if (!consume(TokenKind::Comma))
                         break;
                 }
-                expect(TokenKind::RParen);
             }
+            expect(TokenKind::RParen);
         } else {
             break;
         }
     }
-
     return decl;
 }
 
@@ -1109,6 +1284,15 @@ std::shared_ptr<Declaration> Parser::parse_declaration_block_scope() {
     decl->type = base_type;
 
     parse_init_declarator_list(decl, base_type);
+
+    // Register typedef names so they can be recognized as type specifiers
+    // in subsequent declarations.
+    if (is_typedef) {
+        for (auto& d : decl->declarators) {
+            typedef_types_[std::string(d->name)] = base_type;
+        }
+    }
+
     expect(TokenKind::Semicolon);
     return decl;
 }
@@ -1133,6 +1317,9 @@ std::shared_ptr<Statement> Parser::parse_statement() {
         case TokenKind::KwBreak:
         case TokenKind::KwReturn:
             return parse_jump_statement();
+        case TokenKind::KwCase:
+        case TokenKind::KwDefault:
+            return parse_labeled_statement();
         case TokenKind::KwTry:
             return parse_eh_statement();
         default:
@@ -1140,7 +1327,9 @@ std::shared_ptr<Statement> Parser::parse_statement() {
     }
 
     // Declaration statement.
-    if (is_declaration_specifier_kind(kind)) {
+    if (is_declaration_specifier_kind(kind) ||
+        (kind == TokenKind::Identifier &&
+         typedef_types_.contains(std::string(current().text)))) {
         auto decl = parse_declaration_block_scope();
         if (pending_structured_binding_) {
             auto stmt = pending_structured_binding_;
@@ -1253,7 +1442,9 @@ std::shared_ptr<Statement> Parser::parse_iteration_statement() {
 
     // for-init
     if (current().kind != TokenKind::Semicolon) {
-        if (is_declaration_specifier_kind(current().kind)) {
+        if (is_declaration_specifier_kind(current().kind) ||
+            (current().kind == TokenKind::Identifier &&
+             typedef_types_.contains(std::string(current().text)))) {
             auto decl = parse_declaration_block_scope();
             // Check for range-based for: for ( decl : range_expr ) body
             if (consume(TokenKind::Colon)) {
@@ -1379,8 +1570,31 @@ std::shared_ptr<Statement> Parser::parse_eh_statement() {
 }
 
 std::shared_ptr<Statement> Parser::parse_labeled_statement() {
-    (void)0;
-    return nullptr;
+    auto stmt = std::make_shared<Statement>();
+    stmt->location = current().location;
+
+    if (consume(TokenKind::KwCase)) {
+        stmt->kind = StatementKind::Case;
+        stmt->case_value = parse_expression();
+        expect(TokenKind::Colon);
+        // After the colon, the case label is followed by another statement
+        // (or compound statement). Parse it as the body of this case.
+        if (current().kind == TokenKind::LBrace) {
+            stmt->loop_body = parse_compound_statement();
+        } else {
+            stmt->loop_body = parse_statement();
+        }
+    } else if (consume(TokenKind::KwDefault)) {
+        stmt->kind = StatementKind::Default;
+        expect(TokenKind::Colon);
+        if (current().kind == TokenKind::LBrace) {
+            stmt->loop_body = parse_compound_statement();
+        } else {
+            stmt->loop_body = parse_statement();
+        }
+    }
+
+    return stmt;
 }
 
 // --- Expressions ------------------------------------------------------
@@ -1729,7 +1943,9 @@ std::shared_ptr<Expression> Parser::parse_cast_expression() {
     // name, attempt a cast parse; if ')' doesn't follow, fall back to
     // parenthesized expression.
     if (consume(TokenKind::LParen)) {
-        if (is_cast_start(current().kind)) {
+        if (is_cast_start(current().kind) ||
+            (current().kind == TokenKind::Identifier &&
+             typedef_types_.contains(std::string(current().text)))) {
             StorageClass storage = StorageClass::None;
             Linkage linkage = Linkage::None;
             bool is_typedef = false, is_extern = false, is_static = false;
@@ -1741,6 +1957,19 @@ std::shared_ptr<Expression> Parser::parse_cast_expression() {
                 storage, linkage, is_typedef, is_extern, is_static, is_const,
                 is_volatile, is_restrict, is_inline, is_noreturn,
                 is_noexcept, is_constexpr, has_alignas);
+            // Consume pointer declarators (e.g. `unsigned char**` in a cast).
+            // Build the full pointer chain: `void*` → Pointer(Void), `void**` →
+            // Pointer(Pointer(Void)), etc.  Stop when ')' follows the last '*'.
+            while (current().kind == TokenKind::Star) {
+                consume(TokenKind::Star);
+                auto ptr_type = std::make_shared<Type>();
+                ptr_type->kind = TypeKind::Pointer;
+                ptr_type->pointee = type;
+                type = ptr_type;
+                if (current().kind == TokenKind::RParen) {
+                    break;
+                }
+            }
             if (type && consume(TokenKind::RParen)) {
                 auto expr = std::make_shared<Expression>();
                 expr->kind = ExpressionKind::Cast;
@@ -1762,8 +1991,7 @@ std::shared_ptr<Expression> Parser::parse_cast_expression() {
 }
 
 bool Parser::is_cast_start(TokenKind kind) const {
-    return is_type_specifier_kind(kind) || is_type_qualifier_kind(kind) ||
-           kind == TokenKind::Star || kind == TokenKind::LParen;
+    return is_type_specifier_kind(kind) || is_type_qualifier_kind(kind);
 }
 
 std::shared_ptr<Expression> Parser::parse_unary_expression() {
@@ -1849,6 +2077,14 @@ std::shared_ptr<Expression> Parser::parse_unary_expression() {
                         storage, linkage, is_typedef, is_extern, is_static,
                         is_const, is_volatile, is_restrict, is_inline,
                         is_noreturn, is_noexcept, is_constexpr, has_alignas);
+                    // Consume pointer declarators (e.g. `sizeof(void*)`).
+                    while (current().kind == TokenKind::Star) {
+                        consume(TokenKind::Star);
+                        auto ptr_type = std::make_shared<Type>();
+                        ptr_type->kind = TypeKind::Pointer;
+                        ptr_type->pointee = type;
+                        type = ptr_type;
+                    }
                     if (type && consume(TokenKind::RParen)) {
                         auto expr = std::make_shared<Expression>();
                         expr->kind = ExpressionKind::SizeofType;
@@ -1983,16 +2219,54 @@ std::shared_ptr<Expression> Parser::parse_postfix_expression() {
             expect(TokenKind::RBracket);
             base = sub;
         } else if (consume(TokenKind::LParen)) {
-            auto call = std::make_shared<Expression>();
-            call->kind = ExpressionKind::FunctionCall;
-            call->callee = base;
-            while (!at_eof() && current().kind != TokenKind::RParen) {
-                call->call_args.push_back(parse_assignment_expression());
-                if (!consume(TokenKind::Comma))
-                    break;
+            // __builtin_va_arg(ap, type) — second argument is a type, not an
+            // expression. Handle it specially so `void **` parses correctly.
+            if (base->kind == ExpressionKind::Identifier &&
+                base->identifier_name == "__builtin_va_arg") {
+                auto va = std::make_shared<Expression>();
+                va->kind = ExpressionKind::VaArg;
+                va->va_arg_list = base;
+                if (current().kind != TokenKind::RParen) {
+                    va->va_arg_list = parse_assignment_expression();
+                }
+                if (!consume(TokenKind::Comma)) {
+                    error("expected ',' in __builtin_va_arg");
+                    return nullptr;
+                }
+                // Parse the type argument (declaration specifiers + pointer declarators).
+                StorageClass storage = StorageClass::None;
+                Linkage linkage = Linkage::None;
+                bool is_typedef = false, is_extern = false, is_static = false;
+                bool is_const = false, is_volatile = false, is_restrict = false;
+                bool is_inline = false, is_noreturn = false;
+                bool is_noexcept = false, is_constexpr = false, has_alignas = false;
+                va->va_arg_type = parse_declaration_specifiers(
+                    storage, linkage, is_typedef, is_extern, is_static,
+                    is_const, is_volatile, is_restrict, is_inline, is_noreturn,
+                    is_noexcept, is_constexpr, has_alignas);
+                // Consume pointer declarators (e.g. `void **`).
+                while (current().kind == TokenKind::Star) {
+                    consume(TokenKind::Star);
+                    auto ptr_type = std::make_shared<Type>();
+                    ptr_type->kind = TypeKind::Pointer;
+                    ptr_type->pointee = va->va_arg_type;
+                    va->va_arg_type = ptr_type;
+                }
+                expect(TokenKind::RParen);
+                base = va;
+            } else {
+                auto call = std::make_shared<Expression>();
+                call->kind = ExpressionKind::FunctionCall;
+                call->location = current().location;
+                call->callee = base;
+                while (!at_eof() && current().kind != TokenKind::RParen) {
+                    call->call_args.push_back(parse_assignment_expression());
+                    if (!consume(TokenKind::Comma))
+                        break;
+                }
+                expect(TokenKind::RParen);
+                base = call;
             }
-            expect(TokenKind::RParen);
-            base = call;
         } else if (consume(TokenKind::Period)) {
             auto member = std::make_shared<Expression>();
             member->kind = ExpressionKind::MemberAccess;
@@ -2017,45 +2291,18 @@ std::shared_ptr<Expression> Parser::parse_postfix_expression() {
             }
             member->member_base = base;
             base = member;
-        } else if (is_fold_op(current().kind)) {
-            // M10: fold expression. Check if operator is followed by '...'.
-            // Consume the operator, peek at next token, push back if not a fold.
-            Token op_token = current();
-            advance();  // consume the operator
-
-            if (current().kind == TokenKind::Ellipsis) {
-                // Fold expression! Both operator and '...' consumed.
-                advance();  // consume '...'
-
-                auto fold = std::make_shared<Expression>();
-                fold->kind = ExpressionKind::FoldExpression;
-                fold->fold_operand = base;
-                fold->fold_op = parse_fold_op(op_token.kind);
-
-                if (current().kind == TokenKind::RParen) {
-                    // Unary right fold: (pack op ...)
-                    fold->fold_kind = 1;
-                } else {
-                    // Binary fold: (pack op ... op init)
-                    // Expect another operator after '...'.
-                    Token op2_token = current();
-                    advance();  // consume the second operator
-                    fold->fold_op = parse_fold_op(op2_token.kind);
-                    fold->fold_init = parse_assignment_expression();
-                    if (!fold->fold_init) {
-                        error("expected expression after operator in fold expression");
-                        return base;
-                    }
-                    fold->fold_kind = 2;
-                }
-                base = fold;
-            } else {
-                // Not a fold expression — restore both tokens.
-                // Push back in reverse order so operator comes out first.
-                preprocessor_.push_back(current());      // token after operator
-                preprocessor_.push_back(op_token);        // the operator itself
-                break;  // let the caller handle the binary operator
-            }
+        } else if (consume(TokenKind::PlusPlus)) {
+            auto expr = std::make_shared<Expression>();
+            expr->kind = ExpressionKind::Unary;
+            expr->unary_op = UnaryOp::PostInc;
+            expr->unary_operand = base;
+            base = expr;
+        } else if (consume(TokenKind::MinusMinus)) {
+            auto expr = std::make_shared<Expression>();
+            expr->kind = ExpressionKind::Unary;
+            expr->unary_op = UnaryOp::PostDec;
+            expr->unary_operand = base;
+            base = expr;
         } else if (current().kind == TokenKind::Ellipsis) {
             // M10: unary left fold: (... op pack)
             // We are at '...'. The next token is the operator, then the pack.
@@ -2127,6 +2374,20 @@ std::shared_ptr<Expression> Parser::parse_primary_expression() {
             auto expr = std::make_shared<Expression>();
             expr->kind = ExpressionKind::Identifier;
             expr->identifier_name = current().text;
+            advance();
+            return expr;
+        }
+        case TokenKind::KwTrue: {
+            auto expr = std::make_shared<Expression>();
+            expr->kind = ExpressionKind::BooleanLiteral;
+            expr->bool_value = true;
+            advance();
+            return expr;
+        }
+        case TokenKind::KwFalse: {
+            auto expr = std::make_shared<Expression>();
+            expr->kind = ExpressionKind::BooleanLiteral;
+            expr->bool_value = false;
             advance();
             return expr;
         }
@@ -2383,6 +2644,7 @@ bool Parser::is_type_specifier_kind(TokenKind kind) const {
     switch (kind) {
         case TokenKind::KwVoid:
         case TokenKind::KwBool:
+        case TokenKind::KwBoolCpp:
         case TokenKind::KwChar:
         case TokenKind::KwShort:
         case TokenKind::KwInt:
@@ -2397,6 +2659,8 @@ bool Parser::is_type_specifier_kind(TokenKind kind) const {
         case TokenKind::KwDecltype:
             return true;
         case TokenKind::KwUnsigned:
+            return true;
+        case TokenKind::KwSigned:
             return true;
         default:
             return false;
