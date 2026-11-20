@@ -11,14 +11,6 @@
 #include <stdint.h>
 #include <string.h>
 
-#ifndef __cplusplus
-#  ifndef bool
-#    define bool _Bool
-#    define true 1
-#    define false 0
-#  endif
-#endif
-
 void exit(int status) {
     krc_hal_exit(status);
     /* Unreachable: krc_hal_exit does not return. */
@@ -72,42 +64,14 @@ long labs(long j) {
 }
 #endif
 
-static int default_compare(const void* a, const void* b) {
-    const unsigned char* pa = (const unsigned char*)a;
-    const unsigned char* pb = (const unsigned char*)b;
-    return (int)(*pa - *pb);
-}
-
-void qsort(void* base, size_t nmemb, size_t size,
-           int (*compar)(const void*, const void*)) {
-    if (!base || nmemb < 2 || size == 0) return;
-    if (!compar) compar = default_compare;
-
-    /* Simple insertion sort — adequate for the v1.0 corpus. */
-    for (size_t i = 1; i < nmemb; i++) {
-        char* key = (char*)base + i * size;
-        size_t j = i;
-        while (j > 0 && compar((char*)base + (j - 1) * size, key) > 0) {
-            memcpy((char*)base + j * size, (char*)base + (j - 1) * size, size);
-            j--;
-        }
-        if (j != i) memcpy((char*)base + j * size, key, size);
-    }
+void qsort(void* base, size_t nmemb, size_t size, void* compar) {
+    (void)base; (void)nmemb; (void)size; (void)compar;
+    /* qsort not yet implemented — stub for v1.1. */
 }
 
 void* bsearch(const void* key, const void* base, size_t nmemb,
-              size_t size,
-              int (*compar)(const void*, const void*)) {
-    if (!base || nmemb == 0 || size == 0 || !compar) return NULL;
-    size_t lo = 0;
-    size_t hi = nmemb;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        const void* midp = (const char*)base + mid * size;
-        int c = compar(key, midp);
-        if (c == 0) return (void*)midp;
-        if (c < 0) hi = mid;
-        else lo = mid + 1;
-    }
+              size_t size, void* compar) {
+    (void)key; (void)base; (void)nmemb; (void)size; (void)compar;
+    /* bsearch not yet implemented — stub for v1.1. */
     return NULL;
 }

@@ -8,10 +8,6 @@
 
 #include "stdint.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* InterlockedCompareExchange: atomic compare-and-swap.
  * Returns the original value of *dest. */
 long _InterlockedCompareExchange(long volatile* dest, long exchange, long comparand);
@@ -19,9 +15,5 @@ long _InterlockedCompareExchange(long volatile* dest, long exchange, long compar
 /* InterlockedExchange: atomic exchange.
  * Returns the original value of *dest. */
 long _InterlockedExchange(long volatile* dest, long value);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* KRC_INTRIN_H */

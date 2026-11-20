@@ -312,6 +312,11 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Dump AST if requested (works with -fsyntax-only).
+    if (opts.dump_ast) {
+        krc::dump_ast(*tu, std::cout);
+    }
+
     // With -fsyntax-only, stop after semantic analysis: no IR lowering,
     // no backend, no object emission.
     if (opts.fsyntax_only) {
@@ -379,10 +384,6 @@ int main(int argc, char** argv) {
         return 1;
     }
     debug_info = debug_collector.info();
-
-    if (opts.dump_ast && !opts.fsyntax_only) {
-        krc::dump_ast(*tu, std::cout);
-    }
 
     if (opts.dump_ir) {
         krc::dump_module(module, std::cout);

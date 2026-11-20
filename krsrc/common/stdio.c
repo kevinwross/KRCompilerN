@@ -11,14 +11,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#ifndef __cplusplus
-#  ifndef bool
-#    define bool _Bool
-#    define true 1
-#    define false 0
-#  endif
-#endif
-
 static void put_char(char c) {
     krc_hal_putchar(c);
 }

@@ -11,18 +11,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#ifndef __cplusplus
-#  ifndef bool
-#    define bool _Bool
-#    define true 1
-#    define false 0
-#  endif
-#endif
-
 /* Heap management: the linker provides __heap_start and __heap_end symbols.
  * These are declared extern and resolved at link time. */
-extern char __heap_start[];
-extern char __heap_end[];
+extern char* __heap_start;
+extern char* __heap_end;
 
 typedef struct Block {
     struct Block* next;

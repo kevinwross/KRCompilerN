@@ -9,10 +9,6 @@
 
 #include <stddef.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* Write a single character to the console. Returns the character, or -1 on error. */
 int krc_hal_putchar(int ch);
 
@@ -39,10 +35,6 @@ void* krc_hal_alloc(size_t n);
 
 /* Free a previously allocated block. */
 void krc_hal_free(void* ptr);
-
-#ifdef __cplusplus
-} /* extern "C" */
-#endif
 
 #endif /* KRC_RUNTIME_HAL_H */
 

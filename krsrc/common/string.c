@@ -10,15 +10,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#ifndef __cplusplus
-#  ifndef bool
-#    define bool _Bool
-#    define true 1
-#    define false 0
-#  endif
-#endif
-
-#ifndef _MSC_VER
 void* memcpy(void* dest, const void* src, size_t n) {
     unsigned char* d = (unsigned char*)dest;
     const unsigned char* s = (const unsigned char*)src;
@@ -107,7 +98,6 @@ int strncmp(const char* s1, const char* s2, size_t n) {
     if (n == (size_t)-1) return 0;
     return (int)((unsigned char)*s1 - (unsigned char)*s2);
 }
-#endif
 
 char* strchr(const char* s, int c) {
     char ch = (char)c;
