@@ -517,6 +517,12 @@ IRValue* IRGen::lower_expression(const std::shared_ptr<Expression>& expr) {
             break;
         case ExpressionKind::CharLiteral:
         case ExpressionKind::StringLiteral:
+        case ExpressionKind::BooleanLiteral:
+            result = lower_integer_literal(expr);
+            break;
+        case ExpressionKind::VaArg:
+            // VaArg is handled inline at call sites; no IR lowering needed here.
+            break;
         case ExpressionKind::CompoundLiteral:
         case ExpressionKind::StatementExpr:
         case ExpressionKind::StringLiteralConcat:
