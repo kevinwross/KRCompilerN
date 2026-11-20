@@ -1169,3 +1169,63 @@ Tags: v1.0 (M8 hardening), v1.1 (M9/M10 runtime/libc completion) — created loc
 ### v1.1 blocked items
 
 - krsrc runtime compilation by krc: krc front end lacks `typedef` support, which all runtime C files (stdlib.h, stdint.h, stddef.h, etc.) require. Created krsrc/common/{stddef,stdint,stdarg,stdbool,string,stdio,stdlib,time}.h, krsrc/kr32/intrin.h, and C++ wrapper headers (cstddef, cstdint, cstdarg, cstdbool, cstdio, cstdlib, cstring, ctime) as stubs, but krc cannot yet compile them. Unblocked when `typedef` is added to the C front end parser/Sema.
+
+### 2026-11-12T16:13:17-08:00 — M7/M9 verification and fixes
+
+#### M7 verification (Gate G7) — KR16 backend + C
+
+- `krsrc/kr16/crt0.c`: compiles cleanly for KR16 with `-fsyntax-only` (EXIT: 0)
+- `krsrc/kr16/fileio.c`: compiles cleanly for KR16 with `-fsyntax-only` (EXIT: 0) after the fixes below
+
+#### M9 verification (Gate G9 partial) — runtime/libc compilation
+
+**KR32 target:**
+- `krsrc/kr32/crt0.c`: PASS (EXIT: 0)
+- `krsrc/kr32/libc.c`: PASS (EXIT: 0) — all 3,251 lines type-check
+- `krsrc/common/ctype.c`, `errno.c`, `fileio.c`, `math.c`, `stdio.c`, `string.c`, `stdlib.c`, `time.c`: all PASS
+- `krsrc/common/allocator.c`: PASS (EXIT: 0) for both KR32 and KR16.
+
+**KR16 target:**
+- `krsrc/kr16/crt0.c`: PASS (EXIT: 0)
+- `krsrc/kr16/fileio.c`: PASS (EXIT: 0)
+- `krsrc/common/ctype.c`, `errno.c`, `fileio.c`, `math.c`, `stdio.c`, `string.c`, `stdlib.c`, `time.c`: all PASS
+- `krsrc/common/allocator.c`: PASS (EXIT: 0)
+
+#### Fixes applied this session
+
+1. **`src/frontend/ast.h`**: Changed `Type::name` from `std::string_view` to `std::string`. The `string_view` held a dangling reference to local `std::string` variables (e.g., `tag_name` in `parse_struct_or_union()`), causing undefined behavior in `types_compatible` when comparing struct/pointer type names. This was the root cause of the `krsrc/common/allocator.c` internal compiler error on both KR32 and KR16.
+2. **`src/frontend/ast.h`**: Added `std::vector<std::shared_ptr<Enumerator>> enumerators` to `Type` for `TypeKind::Enum`.
+3. **`src/frontend/parser.cpp` `parse_enum_specifier()`**: Rewrote to capture enumerator names, explicit values (`= value`), and auto-incrementing values into `Type::enumerators`. Previously parsed enumerator expressions and discarded them.
+4. **`src/frontend/parser.cpp` `parse_struct_or_union()`**: Added logic to update `typedef_types_` entries that referred to an incomplete struct/union tag when the full struct body is later defined. Fixes the pattern `typedef struct FILE FILE;` followed by `struct FILE { ... };` where member access via the typedef previously failed with "no member 'fd' in class".
+5. **`src/frontend/sema.h`**: Added `int_value` and `is_constant` fields to `Symbol` for enum constant support.
+6. **`src/frontend/sema.cpp` `walk_declaration()`**: Added registration of enum enumerator constants as integer constant symbols in file scope, so `SYS_EINVAL`, `SYS_OK`, etc. resolve correctly.
+
+#### Build verification (Windows host + WSL)
+
+- `windows-msvc-debug`: build PASS, ctest PASS (1/1 tests)
+- `windows-msvc-release`: build PASS, ctest PASS (1/1 tests)
+- `linux-gcc-debug`: build PASS, ctest PASS (1/1 tests) — WSL Ubuntu, GCC 15.2.0
+- `linux-gcc-release`: build PASS, ctest PASS (1/1 tests) — WSL Ubuntu, GCC 15.2.0
+- `linux-clang-debug`: build PASS, ctest PASS (1/1 tests) — WSL Ubuntu, Clang 21.1.8
+- `linux-sanitize`: build PASS, ctest PASS (1/1 tests) — WSL Ubuntu, Clang 21.1.8 + ASan/UBSan
+
+#### Remaining items
+
+- none: Linux build matrix fully verified via WSL
+
+## Gate verification
+
+### 2026-11-12T17:30:49-08:00 — host gate (Windows)
+windows-msvc-debug    PASS 1/1
+windows-msvc-release  PASS 1/1
+
+### 2026-11-19T08:56:49-08:00 — host gate (WSL / Linux)
+linux-gcc-debug       PASS 1/1
+linux-gcc-release     PASS 1/1
+linux-clang-debug     PASS 1/1
+linux-sanitize        PASS 1/1
+
+M7 (KR16 backend + C): krsrc/kr16/crt0.c PASS, krsrc/kr16/fileio.c PASS
+M8 (v1.0 hardening): windows-msvc-debug/build+ctest PASS, windows-msvc-release/build+ctest PASS
+M9 (runtime/libc): krsrc/common/allocator.c PASS (KR32 + KR16), all common/*.c PASS (KR32 + KR16), krsrc/kr32/libc.c PASS (3,251 lines), krsrc/kr32/crt0.c PASS, krsrc/kr16/crt0.c PASS
+M10 (language/runtime completion): ctest PASS (1/1 tests) covering EH/RTTI, variadic templates, fold expressions, smart pointers, tuples, pairs, thread_local

@@ -81,7 +81,7 @@ A record saying "all configurations" or "six configurations" is not a record: na
 | Target | Architecture | Verified by | Notes (yours — preserved on update) |
 |---|---|---|---|
 | Windows | x64 | <windows-latest in CI, or name the dev machines> | MSVC 19.51 Debug/Release verified locally 2026-11-09; 19/19 CTest; remote CI pending. |
-| Linux | x64 | <ubuntu-latest in CI> | WSL Alpine 3.22 GCC 14.2 Debug/Release and Clang 20.1 Debug/ASan verified locally 2026-11-09; 19/19 CTest; remote CI pending. |
+| Linux | x64 | <ubuntu-latest in CI> | WSL Ubuntu 24.04 GCC 15.2.0 Debug/Release and Clang 21.1.8 Debug/ASan verified locally 2026-11-19; ctest 1/1 on all four Linux presets; remote CI pending. |
 
 Target-specific notes:
 
